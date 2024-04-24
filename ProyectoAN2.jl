@@ -4,16 +4,6 @@
 using Markdown
 using InteractiveUtils
 
-# This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
-macro bind(def, element)
-    quote
-        local iv = try Base.loaded_modules[Base.PkgId(Base.UUID("6e696c72-6542-2067-7265-42206c756150"), "AbstractPlutoDingetjes")].Bonds.initial_value catch; b -> missing; end
-        local el = $(esc(element))
-        global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : iv(el)
-        el
-    end
-end
-
 # ╔═╡ 0c60cb0d-e732-49d9-accc-a7830fd923dd
 begin
 	using LinearAlgebra
@@ -33,37 +23,32 @@ md"""
 
 # ╔═╡ 5c78c360-e914-11ee-1c4a-b176cfb3b907
 md"""
-Encontrar $\Psi: (0,T]\times \Omega\subseteq \mathbb{R}_{+}\times\mathbb{R}^{2} \to \mathbb{R}$ tal que $\Psi(t,x,z)$ cumpla
-
-$\partial_t \theta(\Psi) - \nabla \cdot (K(\theta(\Psi))\nabla(\Psi+z)) = f$
+El problema en el que se centra este cuaderno es el siguiente:
 
 Encontrar $\Psi: \Omega\subseteq \mathbb{R}^{2} \to \mathbb{R}$ tal que $\Psi(x,z)$ cumpla
 
 $-\nabla \cdot (K(\theta(\Psi))\nabla(\Psi+z)) = f$
 
-"""
+con las condiciones de Dirichlet y Neumann:
 
-# ╔═╡ 3cc65314-3e73-4bfe-9503-b53eb1373766
-md"""
-Modelo van Genuchten-Maulem para las funciones $K$ y $\theta$.
+-   $\Psi = 3$ en $\Gamma_{D} = (0,1)\times \{0\}$
+-   $\nabla\Psi \cdot \eta =0$ en $\Gamma_{N} = \partial\Omega - \Gamma_{D}$
+
+
+donde las funciones $K$ y $\theta$ se toman como en el modelo van Genuchten-Maulem
 
 $\theta(\Psi) = \left\{\begin{array}{cc}
 \theta_R + (\theta_S - \theta_R)\left[\frac{1}{1+ (-\alpha \Psi)^n}\right]^{\frac{n-1}{n}}, & \Psi \leq 0\\
 \theta_S, & \Psi>0
 \end{array}\right.$
 
-$K(\Psi) = \left\{\begin{array}{cc}
+$K(\theta(\Psi)) = \left\{\begin{array}{cc}
 K_S \theta(\Psi)^{\frac{1}{2}}\left[1 - (1 - \theta(\Phi)^{\frac{n}{n-1}})^{\frac{n-1}{n}}\right]^{2}, & \Psi \leq 0\\
 K_S, & \Psi>0
 \end{array}\right.$
 
-"""
+y el dominio y los parámetros de las funciones son
 
-# ╔═╡ c7402b57-8565-4302-b34d-5c5f5f9a15a7
-md"""
-# Ejemplo 
-
-Para este primer ejemplo definimos las siguientes condiciones y características del problema. 
 -   $\Omega = \Omega_{vad} \cup \Omega_{gw}$ definido como $\Omega_{vad} = (0,1)\times (-3/4,0)$ y $\Omega_{gw} = (0,1)\times (-1,-3/4]$.
 -   $\alpha = 0.95$
 -   $n=2.9$
@@ -76,16 +61,29 @@ Para este primer ejemplo definimos las siguientes condiciones y características
 -   $\Psi^{0} = \Psi^{0}(z) = -z-3/4$ en $\Omega_{gw}$
 -   $f = f(x,z) = 0.006 cos(4/3\pi z)sin(2\pi x)$ en $\Omega_{vad}$
 -   $f = f(x,z) = 0$ en $\Omega_{gw}$
+
+Este problema se resolverá usando el método de los elementos finitos mezclado con el método de Newton.
 """
+
+# ╔═╡ 31d8cecd-5146-4afc-9ad3-175ffa7aa747
+md"""
+A continuación se muestra una imágen ilustrando el dominio sobre el que estamos trabajando y además se crean las funciones conocidas del problema con sus respectivos parámetros.
+"""
+
+# ╔═╡ a5366af3-1167-457d-aedb-cf56415cf1ab
+load("C:\\Users\\carlo\\OneDrive\\Documents\\Proyectos\\EcuacionRichards\\Dominio.png")
 
 # ╔═╡ f36fac19-3953-4cec-943f-1420fd469d45
 begin
+	#Parámetros para funciones
 	α = 0.95
 	n = 2.9
 	θS = 0.42
 	θR = 0.026
 	KS = 0.12
 
+	#Funciones y algunas derivadas
+	
 	function θ(psi)
 		if psi<=0 
 			aux = (1 + (-α*psi)^n)^((1-n)/n)
@@ -94,8 +92,18 @@ begin
 			return θS
 		end
 	end
+
+	function θprima(psi)
+		if psi<=0 
+			aux = (θS - θR)*n*α*(1 + (-α*psi)^n)^(-2 + 1/n) *(-α*psi)^(n-1)
+			return aux
+		else
+			return 0
+		end
+	end
+		
 	
-	function K(psi)
+	function G(psi)
 		if psi<=0 
 			aux = 1 - (1-θ(psi)^(n/(n-1)) )^((n-1)/n)
 			return KS*(θ(psi)^0.5)*aux^2
@@ -104,6 +112,16 @@ begin
 		end
 	end
 
+	function Gprima(psi)
+		if psi<=0 
+			aux1 = 1 - (1-θ(psi)^(n/(n-1)) )^((n-1)/n)
+			aux2 = 2 * aux1 * (1-θ(psi)^(n/(n-1)))^(-1/n) * θ(psi)^(1/(n-1))
+			return (KS*(0.5*θ(psi)^(-0.5))*aux1^2  + KS*(θ(psi)^(0.5))*aux2)*θprima(psi)
+		else
+			return 0
+		end
+	end
+		
 	function f(x,z)
 		if 0<x<1 
 			if -1<z<=-3/4
@@ -116,21 +134,17 @@ begin
 			return 0
 		end
 	end
-
-end
-
-# ╔═╡ f56fe703-9fa2-4442-a737-d2f3ed7e3b8b
-function G(psi)
-	return K(θ(psi))
 end
 
 # ╔═╡ 772444f8-3b10-4fb2-8a83-7f49cff0e691
 md"""
-## Formulación fuerte del problema
+## Formulaciones del problema
 """
 
-# ╔═╡ a908caae-e7cb-41ed-aa3b-1518f1fc0f5b
+# ╔═╡ ce129dec-f5e3-4aaf-981f-cc028494d619
 md"""
+**Formulación fuerte del problema**
+
 Encontrar $\Psi: \Omega\subseteq \mathbb{R}^{2} \to \mathbb{R}$ tal que $\Psi(x,z)$ cumpla
 
 $-\nabla \cdot (G(\Psi)\nabla(\Psi+z)) = f$
@@ -139,15 +153,40 @@ con las condiciones de frontera
 
 -   $\Psi = 3$ en $\Gamma_{D} = (0,1)\times \{0\}$
 -   $\nabla\Psi \cdot \eta =0$ en $\Gamma_{N} = \partial\Omega - \Gamma_{D}$
+
 """
 
-# ╔═╡ 4508e3e4-7816-4da8-a7cb-ccd4294fbe52
+# ╔═╡ 5f93b7cc-8222-49bb-8311-c3042d23c1eb
 md"""
-## Formulación débil del problema
+Para debilitar la formulación fuerte del problema multipliquemos la EDP por una función de prueba $\Lambda$ e integremos por partes aprovechándose de las condiciones de frontera:
+
+$-\nabla \cdot (G(\Psi)\nabla(\Psi+z)) = f$
+
+$-div((G(\Psi)\nabla(\Psi+z))) \Lambda = f\Lambda$
+
+$\int_{\Omega}-div((G(\Psi)\nabla(\Psi+z))) \Lambda = \int_{\Omega}f\Lambda$
+
+$\int_{\Omega}(G(\Psi)\nabla(\Psi+z)) \nabla\Lambda  - \int_{\partial\Omega}G(\Psi)\nabla(\Psi+z)\Lambda\cdot \eta = \int_{\Omega}f\Lambda$
+
+$\int_{\Omega}(G(\Psi)\nabla(\Psi+z)) \nabla\Lambda  - \int_{\Gamma_D}G(\Psi)\nabla(\Psi+z)\Lambda\cdot \eta - \int_{\Gamma_N}G(\Psi)\nabla(\Psi+z)\Lambda\cdot \eta = \int_{\Omega}f\Lambda$
+
+$\int_{\Omega}(G(\Psi)\nabla(\Psi+z)) \nabla\Lambda   - \int_{\Gamma_N}G(\Psi)\nabla(\Psi+z)\Lambda\cdot \eta = \int_{\Omega}f\Lambda$
+
+$\int_{\Omega}(G(\Psi)\nabla(\Psi+z)) \nabla\Lambda   - \int_{\Gamma_N}G(\Psi)\nabla z\Lambda\cdot \eta = \int_{\Omega}f\Lambda$
+
+Suponiendo que $\Lambda$ se anula en la frontera de Dirichlet.
+
+Se define el producto interno entre funciones de la siguiente manera
+
+$\langle \Lambda_1, \Lambda_2 \rangle := \int_{\Omega}\Lambda_1 \cdot \Lambda_2 \ dA$
+
+con esto, la formulación débil del problema puede ser escrita.
 """
 
-# ╔═╡ 67fbe951-84e1-4e66-94d1-24ea8f1f053f
+# ╔═╡ a908caae-e7cb-41ed-aa3b-1518f1fc0f5b
 md"""
+**Formulación débil del problema**
+
 Encontrar $\Psi: \Omega\subseteq \mathbb{R}^{2} \to \mathbb{R}$ tal que $\Psi(x,z)$ cumpla
 
 $\langle G(\Psi)\nabla(\Psi+z) , \nabla \Lambda \rangle = \langle f,\Lambda\rangle$
@@ -158,17 +197,42 @@ para todo $\Lambda$ en el espacio de Sóbolev $H^{1}_{0}(\Omega)$ donde el subí
 -   $\nabla\Psi \cdot \eta =0$ en $\Gamma_{N} = \partial\Omega - \Gamma_{D}$
 """
 
-# ╔═╡ ad364b34-4e9d-4978-93ce-a8d513c0bfb5
-
-
-# ╔═╡ 9764a9fa-a2de-431b-acb4-f221f4012e90
+# ╔═╡ 6a55bf47-7c07-4264-92ed-7b583a6de451
 md"""
-## Linealización del problema
+Dada la no linealidad de $G$ en la anterior EDP debemos aplicar algún método para volver el problema líneal; se escoge el método de Newton. Defina
+
+$F(\Psi,\Lambda) = \langle G(\Psi)\nabla(\Psi+z) , \nabla \Lambda \rangle - \langle f,\Lambda\rangle$
+
+la formulación débil(variacional) del problema puede ser escrita como $F(\Psi,\Lambda)=0$. Suponga que tenemos una aproximación $\Psi^{(\ell)}$ de la solución de la EDP, queremos encontrar una perturbación $h^{(\ell)}$ de la aproximación de tal manera que si $\Psi^{(\ell+1)} = \Psi^{(\ell)} + h^{(\ell)}$ entonces $F(\Psi^{(\ell +1)},\Lambda)=0$ para toda $\Lambda$; de esta manera,
+
+$F(\Psi^{(\ell +1)},\Lambda)=0$
+
+$F(\Psi^{(\ell)} + h^{(\ell)},\Lambda)-F(\Psi^{(\ell)},\Lambda)=-F(\Psi^{(\ell)},\Lambda)$
+
+
+$\langle G(\Psi^{(\ell)} + h^{(\ell)})\nabla(\Psi^{(\ell)} + h^{(\ell)}+z) , \nabla \Lambda \rangle - \langle f,\Lambda\rangle - (\langle G(\Psi^{(\ell)})\nabla(\Psi^{(\ell)}+z) , \nabla \Lambda \rangle - \langle f,\Lambda\rangle) \\ = -F(\Psi^{(\ell)},\Lambda)$
+
+$\langle G(\Psi^{(\ell)} + h^{(\ell)})\nabla(\Psi^{(\ell)} + h^{(\ell)}+z) , \nabla \Lambda \rangle  - \langle G(\Psi^{(\ell)})\nabla(\Psi^{(\ell)}+z) , \nabla \Lambda \rangle   = -F(\Psi^{(\ell)},\Lambda)$
+
+$\langle ( G(\Psi^{(\ell)} + h^{(\ell)}) -  G(\Psi^{(\ell)} ))\nabla(\Psi^{(\ell)}+z), \nabla\Lambda\rangle + \langle G(\Psi^{(\ell)} + h^{(\ell)})\nabla h^{(\ell)} ,\nabla\Lambda\rangle= -F(\Psi^{(\ell)},\Lambda)$
+
+$\langle h^{(\ell)} G'(\Psi^{(\ell)} )\nabla(\Psi^{(\ell)}+z), \nabla\Lambda\rangle + \langle (G(\Psi^{(\ell)} ) + h^{(\ell)}G'(\Psi^{(\ell)} )) \nabla h^{(\ell)},  \nabla\Lambda\rangle = -F(\Psi^{(\ell)},\Lambda)$
+
+$\langle  G'(\Psi^{(\ell)} )\nabla(\Psi^{(\ell)}+z) h^{(\ell)}, \nabla\Lambda\rangle + \langle G(\Psi^{(\ell)} )  \nabla h^{(\ell)},  \nabla\Lambda\rangle = -F(\Psi^{(\ell)},\Lambda)$
+$\langle  G'(\Psi^{(\ell)} )\nabla(\Psi^{(\ell)}+z) h^{(\ell)} + G(\Psi^{(\ell)} )  \nabla h^{(\ell)},  \nabla\Lambda\rangle = -F(\Psi^{(\ell)},\Lambda)$
+
+Ahora, transformamos el problema a encontrar $h^{(\ell)}$ tal que 
+
+$\langle  G'(\Psi^{(\ell)} )\nabla(\Psi^{(\ell)}+z) h^{(\ell)} + G(\Psi^{(\ell)} )  \nabla h^{(\ell)},  \nabla\Lambda\rangle = -F(\Psi^{(\ell)},\Lambda)$
+
+conociendo previamente $\Psi^{(\ell)}$.
 """
 
-# ╔═╡ 18ec5612-6534-4372-8af7-84694adae83b
+# ╔═╡ f2ac6978-bf9d-4495-ae87-9c5d69131abd
 md"""
-Por medio del método de Newton se obtuvo lo siguiente: Iterar la sucesión hasta la convergencia requerida
+**Linealización del problema**
+
+Iterar la sucesión hasta la convergencia requerida
 
 $\Psi^{(\ell+1)} = \Psi^{(\ell)} + h^{(\ell)}$
 donde $h^{(n)}$ es la función "paso" que resuelve el problema
@@ -179,9 +243,9 @@ con las condiciones de frontera
 
 -   $h^{(\ell)} = 0$ en $\Gamma_{D}$
 -   $\nabla h^{(\ell)} \cdot \eta =0$ en $\Gamma_{N}$
-y $F$ es un operador que únicamente depende de la función $\Psi^{(\ell)}$ definido como
+y $F$ es un operador que únicamente depende de la función $\Psi^{(\ell)}$ y de $\Lambda$ definido como
 
-$F(\Psi) = \langle G(\Psi)\nabla(\Psi+z) , \nabla \Lambda \rangle - \langle f,\Lambda\rangle$
+$F(\Psi,\Lambda) = \langle G(\Psi)\nabla(\Psi+z) , \nabla \Lambda \rangle - \langle f,\Lambda\rangle$
 
 La elección de $\Psi^{(0)}$ se hace resolviendo el siguiente problema
 
@@ -193,28 +257,38 @@ para todo $\Lambda \in H^{1}_{0}(\Omega)$. Con condiciones
 
 -   $\Psi^{(0)} = 3$ en $\Gamma_{D}$
 -   $\nabla\Psi^{(0)} \cdot \eta =0$ en $\Gamma_{N}$
--   $\psi = 3$ 
-"""
-
-# ╔═╡ c98b88d6-c654-4f31-8ea6-8b67f215e9d6
-md"""
-## Formulación matricial del problema linealizado
+-   $\psi = 3$
 """
 
 # ╔═╡ 075c000f-a253-4126-bedb-c6db4e3b4fda
 md"""
+**Formulación matricial del problema linealizado**
+
 Para el conjunto de nodos de la discretización $\{(x_i,z_i)\}$ defina el conjunto de funciones lineales a trozos $\{\phi_{j}\}$ de tal manera que $\phi_{j}(x_{i},z_{i}) = \delta_{ij}$, donde $\delta_{ij}$ corresponde al delta de Kronecker.
 
 La solución del problema por medio del método de los elementos finitos se encontrará en el espacio de funciones $V = \langle \phi_{j}\rangle$. Considere el subespacio $\hat{V} = \{\lambda \in V | \ \lambda = 0 \text{ en }\Gamma_{D}\}$.
 """
 
-# ╔═╡ 6298d586-5f39-43ab-9c0f-dfe9f296e8ba
+# ╔═╡ 50f20aba-a518-40c9-9753-41ca0916fec9
 md"""
-Para resolver el problema de encontrar la primera aproximación $\Psi^{(0)}$
+Para resolver el problema de encontrar la primera aproximación $\Psi^{(0)}$ suponemos que 
 
+$\Psi^{(0)}(x,z) = \sum_{j=1}^{n} \alpha^{(0)}_{j} \phi_{j}(x,z)$
+
+para todo $(x,z)\in\Omega$. Tomamos las funciones de pruebas $\Lambda$ como la base $\{ \phi_{l} |\ \phi_{l}=0 \text{ en }\Gamma_{D} \}$ de $\hat{V}$. Luego,
+
+$\langle G(\psi)\nabla\Psi^{(0)} , \nabla \Lambda \rangle = \langle f,\Lambda\rangle - \langle G(\psi)\nabla z , \nabla \Lambda \rangle$
+
+$\langle G(\psi)\sum_{j=1}^{n} \alpha^{(0)}_{j} \nabla\phi_{j} , \nabla \phi_{i} \rangle = \langle f,\phi_{i}\rangle - \langle G(\psi)\nabla z , \nabla \phi_{i} \rangle$
+
+$\sum_{j=1}^{n} G(\psi) \langle \nabla\phi_{j} , \nabla \phi_{i} \rangle \alpha^{(0)}_{j} = \langle f,\phi_{i}\rangle - \langle G(\psi)\nabla z , \nabla \phi_{i} \rangle$
+
+Si definimos $A_{ij}^{(0)} := G(\psi) \langle \nabla\phi_{j} , \nabla \phi_{i} \rangle$ y $b_{i}^{(0)} = \langle f,\phi_{i}\rangle - \langle G(\psi)\nabla z , \nabla \phi_{i} \rangle$, obtenemos la ecuación matricial
+
+$A^{(0)}\alpha^{(0)} = b^{(0)}$
 """
 
-# ╔═╡ 1cd2ebe7-6fa7-490e-8731-20920ae0fa23
+# ╔═╡ 494e820b-264b-44aa-869e-06ce5fd2028a
 md"""
 Para calcular $h^{(\ell)}$ se tiene que 
 
@@ -228,176 +302,219 @@ $$\langle G'(\Psi^{(\ell)})\nabla(\Psi^{(\ell)}+z) h^{(\ell)}, \nabla \Lambda \r
 
 $\sum_{j=1}^{n} \beta^{(\ell)}_{j} \langle G'(\Psi^{(\ell)})\nabla(\Psi^{(\ell)}+z) \phi_{j}, \nabla \phi_{i} \rangle + \sum_{j=1}^{n} \beta^{(\ell)}_{j} \langle G(\Psi^{(\ell)}) \nabla \phi_{j} , \nabla \phi_{i}\rangle = -F(\Psi^{(\ell)},\phi_{i})$
 
-$\sum_{j=1}^{n} \beta^{(\ell)}_{j} a_{ij}^{(\ell)} + \sum_{j=1}^{n} \beta^{(\ell)}_{j} m_{ij}^{(\ell)} = b^{(\ell)}_{i}$
+$\sum_{j=1}^{n}  (\langle G'(\Psi^{(\ell)})\nabla(\Psi^{(\ell)}+z) \phi_{j}, \nabla \phi_{i} \rangle + \langle G(\Psi^{(\ell)}) \nabla \phi_{j} , \nabla \phi_{i}\rangle) \beta^{(\ell)}_{j}  = -F(\Psi^{(\ell)},\phi_{i})$
 
-$(A^{(\ell)}+M^{(\ell)})\beta^{(\ell)} = b^{(\ell)}$
+$\sum_{j=1}^{n} \beta^{(\ell)}_{j} A_{ij}^{(\ell)}  = b^{(\ell)}_{i}$
+
+$A^{(\ell)} \beta^{(\ell)} = b^{(\ell)}$
 """
-
-# ╔═╡ 5f9e308c-649d-4b7d-b5c8-dd751f5fa422
-md"""
-## Explicación del método de los elementos finitos (FEM)
-"""
-
-# ╔═╡ 2308507d-3ec6-4e83-90c0-9a8be9e6abc3
-
 
 # ╔═╡ 11a1327c-dfc7-4197-98de-c931089a5fd7
 md"""
 ## Implementación del método de los elementos finitos (FEM)
 """
 
-# ╔═╡ e8bad54b-3061-4097-8b58-1a960186218f
-NS = @bind N Slider(4:4:64, show_value=true, default=4)
-
-# ╔═╡ 0e2decf2-9ae3-46cf-b67a-e521bb6f6fd3
-h = 1/N
-
-# ╔═╡ 87406be9-759c-4cf0-b33f-4ecdb806a3dc
+# ╔═╡ 7473f48b-84d2-4155-b927-1d493b8e948d
 md"""
-### Creación de la malla
+Para "explotar" la geometría del dominio vamos a implementar el método de los elementos finitos sobre una partición $Q_h$ del dominio $\Omega$ compuesta por $N^2$ cuadrados donde $N$ es el número de particiones en cada lado del dominio $\Omega$. Por ejemplo, en la siguiente figura se muestra la partición cuando $N=4$, en color azul se muestra el número asignado a cada elemento y en color morado se coloca la etiqueta de cada nodo de la partición, también llamado grado de libertad.
 """
 
-# ╔═╡ 61ef085a-60a9-435d-b44e-3cfeffab2b53
+# ╔═╡ 7859a78b-f7e4-4f62-bd58-1ec7a194fa33
+load("C:\\Users\\carlo\\OneDrive\\Documents\\Proyectos\\EcuacionRichards\\Qh4.png")
+
+# ╔═╡ 6a1d5a3d-24d8-420c-a8b7-14ee7f359a47
+md"""
+Recordemos que se propone encontrar la solución de la ecuación diferencial parcial con condiciones de frontera en el espacio de funciones lineales a trozos sobre el dominio $\Omega$, que en realidad es una interpolación lineal realizada sobre los nodos.
+"""
+
+# ╔═╡ 4c697e14-9cb6-4bad-937b-1005c75abf5c
+load("C:\\Users\\carlo\\OneDrive\\Documents\\Proyectos\\EcuacionRichards\\ElementoBase.png")
+
+# ╔═╡ 7f58f60b-b52e-459b-829a-bbff79b96c70
+load("C:\\Users\\carlo\\OneDrive\\Documents\\Proyectos\\EcuacionRichards\\T.png")
+
+# ╔═╡ 5c14c421-0191-499f-9e87-b153a7194cca
+md"""
+Para hacer la integración necesitada en la formulación débil del problema usamos el método de cuadratura de Gauss.
+"""
+
+# ╔═╡ 55830bf9-ad62-4960-a269-95d5029d67c6
+load("C:\\Users\\carlo\\OneDrive\\Documents\\Proyectos\\EcuacionRichards\\Cuadratura.png")
+
+# ╔═╡ 5bf6254a-f385-4458-93ca-bab6a8ebd0c2
+
+
+# ╔═╡ f8d71301-6577-41cc-8045-aa75c161b138
+N = 16
+
+# ╔═╡ 814d16d2-ca88-41f5-85e8-4c3f9712b12c
 begin
 	#Funciones base y sus gradientes en el elemento de referencia
-	function ϕ10(x,z)
-		return (-1/4)*(1-x)*(-1-z)
-	end
-	function ϕ20(x,z)
-		return (1/4)*(-1-x)*(-1-z)
-	end
-	function ϕ30(x,z)
-		return (1/4)*(1-x)*(1-z)
-	end
-	function ϕ40(x,z)
-		return (-1/4)*(-1-x)*(1-z)
-	end
-	function ∂ϕ10(x,z)
-		return [(1/4)*(-1-z),(1/4)*(1-x)]
-	end
-	function ∂ϕ20(x,z)
-		return [(-1/4)*(-1-z),(-1/4)*(-1-x)]
-	end
-	function ∂ϕ30(x,z)
-		return [(-1/4)*(1-z),(-1/4)*(1-x)]
-	end
-	function ∂ϕ40(x,z)
-		return [(1/4)*(1-z),(1/4)*(-1-x)]
-	end 
-
-	#Pesos de cuadratura en el elemento de referencia
-	ω₀ = [5/9;8/9;5/9]
-	#Puntos de cuadratura en el elemento de referencia
-	ξ₀ = [(-sqrt(3/5),-sqrt(3/5)) (-sqrt(3/5),0) (-sqrt(3/5), sqrt(3/5)) ; 
-		(0,-sqrt(3/5)) (0,0) (0,sqrt(3/5));
-		(sqrt(3/5),-sqrt(3/5)) (sqrt(3/5),0) (sqrt(3/5),sqrt(3/5))];
+		function ϕ10(x,z)
+			return (-1/4)*(1-x)*(-1-z)
+		end
+		function ϕ20(x,z)
+			return (1/4)*(-1-x)*(-1-z)
+		end
+		function ϕ30(x,z)
+			return (1/4)*(1-x)*(1-z)
+		end
+		function ϕ40(x,z)
+			return (-1/4)*(-1-x)*(1-z)
+		end
+		function ∂ϕ10(x,z)
+			return [(1/4)*(-1-z),(1/4)*(1-x)]
+		end
+		function ∂ϕ20(x,z)
+			return [(-1/4)*(-1-z),(-1/4)*(-1-x)]
+		end
+		function ∂ϕ30(x,z)
+			return [(-1/4)*(1-z),(-1/4)*(1-x)]
+		end
+		function ∂ϕ40(x,z)
+			return [(1/4)*(1-z),(1/4)*(-1-x)]
+		end 
+	
+		#Pesos de cuadratura en el elemento de referencia
+		ω₀ = [5/9;8/9;5/9]
+		#Puntos de cuadratura en el elemento de referencia
+		ξ₀ = [(-sqrt(3/5),-sqrt(3/5)) (-sqrt(3/5),0) (-sqrt(3/5), sqrt(3/5)) ; 
+			(0,-sqrt(3/5)) (0,0) (0,sqrt(3/5));
+			(sqrt(3/5),-sqrt(3/5)) (sqrt(3/5),0) (sqrt(3/5),sqrt(3/5))];
 end
 
-# ╔═╡ 0b1a7ddc-e05a-450a-b348-a2d104eb50ca
-begin
-	mutable struct Element
-		#Nodos del elemento
-		P1    #Nodo izquierdo superior
-		P2    #Nodo derecho superior
-		P3    #Nodo izquierdo inferior
-		P4    #Nodo derecho inferior
+# ╔═╡ ddeb0da4-ed10-4daf-92c7-bf210a3d507e
+map(p->∂ϕ10(p[1],p[2]),ξ₀)
 
-		ω     #Pesos de la cuadratura
-		ξ     #Puntos de evaluación de la cuadratura
-		
-		dof   #Grados de libertad (degree of freedom)
-		
-		# Funciones base (locales) y sus derivadas
-		## Solo se consideran las funciones evaluadas
-		## en los puntos ζ
-		ϕ
-		∂ϕ	
-		
-		Aloc  # Matriz A local
-		bloc  # Vector b local
-	end
-	
-	Qh=Array{Element}(undef,N*N); 
+# ╔═╡ 622a86e2-95fa-46eb-a9e5-bb914372bd48
+function SolucionInicial(N0)
+	#Matrices globales
+	A=zeros((N0+1)^2,(N0+1)^2);
+	b=zeros((N0+1)^2,1);
+	dofsglobal = 1:(N0+1)^2
+	dofsD = 1:N0+1
+	dofsfree = (N0+2):(N0+1)^2
 
+	#Funciones base
+	ϕ1 = map(p->ϕ10(p[1],p[2]),ξ₀)
+	ϕ2 = map(p->ϕ20(p[1],p[2]),ξ₀)
+	ϕ3 = map(p->ϕ30(p[1],p[2]),ξ₀)
+	ϕ4 = map(p->ϕ40(p[1],p[2]),ξ₀)
+	∂ϕ1 = map(p->∂ϕ10(p[1],p[2]),ξ₀)
+	∂ϕ2 = map(p->∂ϕ20(p[1],p[2]),ξ₀)
+	∂ϕ3 = map(p->∂ϕ30(p[1],p[2]),ξ₀)
+	∂ϕ4 = map(p->∂ϕ40(p[1],p[2]),ξ₀)
+	ϕ = (ϕ1,ϕ2,ϕ3,ϕ4)
+	∂ϕ = (∂ϕ1,∂ϕ2,∂ϕ3,∂ϕ4)
+	ω = 0.5 * (1/N0) * ω₀
+
+	#Funcion que coloca los puntos de cuadratura sobre cada elemento
 	function Tinvξ(a,c)
-		ξ₀₀ = map(p -> ((0.5/N)*(p[1]+1)+a,(0.5/N)*(p[2]+1)+c), ξ₀)
+		ξ₀₀ = map(p -> ((0.5/N0)*(p[1]+1)+a,(0.5/N0)*(p[2]+1)+c), ξ₀)
 		return ξ₀₀
 	end
-	dofs1 = [k for k in 1:(N+1)^3 if k%(N+1)!=0]
-	for i in 1:N*N
+	
+	dofs1 = [k for k in 1:(N0+1)^3 if k%(N0+1)!=0];
+	
+	#Información necesaria de cada elemento
+	for i in 1:N0*N0
 		dof1 = dofs1[i]
-		P1 = [0,0] + (1/N)*[dof1%(N+1)-1, - floor(dof1/(N+1))]
-		dof = [dof1,dof1+1,dof1+N+1,dof1+N+2]
-		ω = 0.5 * (1/N) * ω₀
-		ξ = Tinvξ(P1[1],P1[2]-1/N)
-		ϕ1 = map(p->ϕ10(p[1],p[2]),ξ)
-		ϕ2 = map(p->ϕ20(p[1],p[2]),ξ)
-		ϕ3 = map(p->ϕ30(p[1],p[2]),ξ)
-		ϕ4 = map(p->ϕ40(p[1],p[2]),ξ)
-		∂ϕ1 = map(p->∂ϕ10(p[1],p[2]),ξ)
-		∂ϕ2 = map(p->∂ϕ20(p[1],p[2]),ξ)
-		∂ϕ3 = map(p->∂ϕ30(p[1],p[2]),ξ)
-		∂ϕ4 = map(p->∂ϕ40(p[1],p[2]),ξ)
-		ϕ = (ϕ1,ϕ2,ϕ3,ϕ4)
-		∂ϕ = (∂ϕ1,∂ϕ2,∂ϕ3,∂ϕ4)
+		P1 = [0,0] + (1/N0)*[dof1%(N0+1)-1, - floor(dof1/(N0+1))]
+		dof = [dof1,dof1+1,dof1+N0+1,dof1+N0+2]
+		ξ = Tinvξ(P1[1],P1[2]-1/N0)
+
+		#Matrices locales
+		Alocal = [G(3) * ω' * dot.(∂ϕ[i],∂ϕ[j]) * ω for i in 1:4, j in 1:4]
+		blocal = [ω'* (map(p->f(p[1],p[2]),ξ) .* ϕ[i]) * ω - G(3) * ω'*dot.(map(p->[0,1],ξ), ∂ϕ[i]) * ω for i in 1:4]
 		
-		Qh[i] = Element(P1,P1+(1/N)*[1,0],P1+(1/N)*[0,-1],P1+(1/N)*[-1,-1],ω,ξ,dof,ϕ,∂ϕ,[],[])
+		#Ensamblaje de las matrices globales
+		A[dof,dof] += Alocal    
+		b[dof] += blocal	
 	end
+
+	#Solución del problema
+	Solucion0 = zeros((N0+1)^2,1);
+	Solucion0[dofsD] = 3*ones(length(dofsD)) 
+	Solucion0[dofsfree] = A[dofsfree,dofsfree]\(b[dofsfree]  - A[dofsfree,dofsD] * Solucion0[dofsD]); 
+
+	return Solucion0
 end
 
-# ╔═╡ f4ffb3a4-cab1-4612-8e00-e17dc8dfc6e6
-md"""
-### Cálculo de matrices locales
-"""
+# ╔═╡ 6611f2d4-47a8-4df4-9cb2-d52ab20faf15
+SolucionInicial(10)
 
-# ╔═╡ 2c03c7b9-24d3-4c47-a93e-9516c2ed8871
-for i in 1:N*N
-    ω = Qh[i].ω
-	ξ = Qh[i].ξ
-	ϕ = Qh[i].ϕ
-	∂ϕ = Qh[i].∂ϕ
-	A = [G(3) * ω' * dot.(∂ϕ[i],∂ϕ[j]) * ω for i in 1:4, j in 1:4]
-	b = [ω'* (map(p->f(p[1],p[2]),ξ) .* ϕ[i]) * ω - G(3) * ω'*dot.(map(p->[0,1],ξ), ∂ϕ[i]) * ω for i in 1:4]
-	Qh[i].Aloc = A
-	Qh[i].bloc = b
-end
-
-# ╔═╡ 9d49aea0-1c67-4476-8b68-32c3fcd907fc
-md"""
-### Ensamblaje de matrices globales
-"""
-
-# ╔═╡ 0272a7a8-3ea1-4b2c-8155-926d5c577f82
+# ╔═╡ 6609e51d-11cc-4b1d-8e38-a660b08c0b6e
 begin
+	xmesh = 0:(1/N):1
+	zmesh = -1:(1/N):0	
+	plot(xmesh, zmesh,reverse(reshape(SolucionInicial(N),N+1,N+1)'), st=:surface, xlabel="x", ylabel="z", zlabel="", title="",color=:viridis,camera=(0, 90))
+	
+end
+
+# ╔═╡ 9ed4191b-9890-447b-ab24-21084c101409
+function F(psi,Lambda)
+	
+	return 1
+end
+
+# ╔═╡ 33f56399-0bd2-4dce-94ab-1ff5d9a6cd15
+function hdeNewton(N,Ψ)
+	#Malla (lista de elementos)
+	Qh=Array{Element}(undef,N*N);
+
+	#Matrices globales
 	A=zeros((N+1)^2,(N+1)^2);
 	b=zeros((N+1)^2,1);
 	dofsglobal = 1:(N+1)^2
 	dofsD = 1:N+1
 	dofsfree = (N+2):(N+1)^2
 
-	for i=1:N*N
-		Aloc=Qh[i].Aloc
-		bloc=Qh[i].bloc
-		dof=Int.(Qh[i].dof) #Este es un vector de tamaño 4
-	    
-		A[dof,dof] += Aloc    
-		b[dof] += bloc	   
+	#Funciones base
+	ϕ1 = map(p->ϕ10(p[1],p[2]),ξ₀)
+	ϕ2 = map(p->ϕ20(p[1],p[2]),ξ₀)
+	ϕ3 = map(p->ϕ30(p[1],p[2]),ξ₀)
+	ϕ4 = map(p->ϕ40(p[1],p[2]),ξ₀)
+	∂ϕ1 = map(p->∂ϕ10(p[1],p[2]),ξ₀)
+	∂ϕ2 = map(p->∂ϕ20(p[1],p[2]),ξ₀)
+	∂ϕ3 = map(p->∂ϕ30(p[1],p[2]),ξ₀)
+	∂ϕ4 = map(p->∂ϕ40(p[1],p[2]),ξ₀)
+	ϕ = (ϕ1,ϕ2,ϕ3,ϕ4)
+	∂ϕ = (∂ϕ1,∂ϕ2,∂ϕ3,∂ϕ4)
+	ω = 0.5 * (1/N0) * ω₀
+
+	#Funcion que coloca los puntos de cuadratura sobre cada elemento
+	function Tinvξ(a,c)
+		ξ₀₀ = map(p -> ((0.5/N0)*(p[1]+1)+a,(0.5/N0)*(p[2]+1)+c), ξ₀)
+		return ξ₀₀
 	end
-end
-
-# ╔═╡ 81f306ba-eb85-496c-a83e-8c3029306eb7
-begin
-	Solucion0 = zeros((N+1)^2,1);
-	Solucion0[dofsD] = 3*ones(length(dofsD)) 
-	Solucion0[dofsfree] = A[dofsfree,dofsfree]\(b[dofsfree]  - A[dofsfree,dofsD] * Solucion0[dofsD]); 
-end
-
-# ╔═╡ 6609e51d-11cc-4b1d-8e38-a660b08c0b6e
-begin
-	xmesh = 0:(1/N):1
-	zmesh = -1:(1/N):0	
-	plot(xmesh, zmesh,reverse(reshape(Solucion0,N+1,N+1)'), st=:surface, xlabel="x", ylabel="z", zlabel="", title="",color=:viridis,camera=(0, 90))
 	
+	dofs1 = [k for k in 1:(N0+1)^3 if k%(N0+1)!=0];
+
+	
+	#Información necesaria de cada elemento
+	for i in 1:N*N
+		dof1 = dofs1[i]
+		P1 = [0,0] + (1/N)*[dof1%(N+1)-1, - floor(dof1/(N+1))]
+		dof = [dof1,dof1+1,dof1+N+1,dof1+N+2]
+		ξ = Tinvξ(P1[1],P1[2]-1/N)
+
+		#Matrices locales
+		Alocal = [G(3) * ω' * dot.(∂ϕ[i],∂ϕ[j]) * ω for i in 1:4, j in 1:4]
+		blocal = [ω'* (map(p->f(p[1],p[2]),ξ) .* ϕ[i]) * ω - G(3) * ω'*dot.(map(p->[0,1],ξ), ∂ϕ[i]) * ω for i in 1:4]
+
+		
+		#Ensamblaje de las matrices globales
+		A[dof,dof] += Alocal    
+		b[dof] += blocal	
+		
+	end
+
+	#Solución del problema
+	Solucion = zeros((N+1)^2,1);
+	Solucion[dofsD] = zeros(length(dofsD)) 
+	Solucion[dofsfree] = A[dofsfree,dofsfree]\(b[dofsfree]  - A[dofsfree,dofsD] * Solucion[dofsD]); 
+
+	return Solucion
 end
 
 # ╔═╡ 841196dc-36ba-4d0f-8ce1-3794f4f06efc
@@ -2228,38 +2345,38 @@ version = "1.4.1+1"
 
 # ╔═╡ Cell order:
 # ╠═0c60cb0d-e732-49d9-accc-a7830fd923dd
-# ╟─d7b1efc8-ae25-4393-950b-02e948f31438
+# ╠═d7b1efc8-ae25-4393-950b-02e948f31438
 # ╟─8237a50b-8297-4398-87ff-bdf0147a973f
 # ╟─5c78c360-e914-11ee-1c4a-b176cfb3b907
-# ╟─3cc65314-3e73-4bfe-9503-b53eb1373766
-# ╟─c7402b57-8565-4302-b34d-5c5f5f9a15a7
+# ╟─31d8cecd-5146-4afc-9ad3-175ffa7aa747
+# ╟─a5366af3-1167-457d-aedb-cf56415cf1ab
 # ╠═f36fac19-3953-4cec-943f-1420fd469d45
-# ╠═f56fe703-9fa2-4442-a737-d2f3ed7e3b8b
 # ╟─772444f8-3b10-4fb2-8a83-7f49cff0e691
+# ╟─ce129dec-f5e3-4aaf-981f-cc028494d619
+# ╟─5f93b7cc-8222-49bb-8311-c3042d23c1eb
 # ╟─a908caae-e7cb-41ed-aa3b-1518f1fc0f5b
-# ╟─4508e3e4-7816-4da8-a7cb-ccd4294fbe52
-# ╟─67fbe951-84e1-4e66-94d1-24ea8f1f053f
-# ╠═ad364b34-4e9d-4978-93ce-a8d513c0bfb5
-# ╟─9764a9fa-a2de-431b-acb4-f221f4012e90
-# ╟─18ec5612-6534-4372-8af7-84694adae83b
-# ╟─c98b88d6-c654-4f31-8ea6-8b67f215e9d6
+# ╟─6a55bf47-7c07-4264-92ed-7b583a6de451
+# ╟─f2ac6978-bf9d-4495-ae87-9c5d69131abd
 # ╟─075c000f-a253-4126-bedb-c6db4e3b4fda
-# ╟─6298d586-5f39-43ab-9c0f-dfe9f296e8ba
-# ╟─1cd2ebe7-6fa7-490e-8731-20920ae0fa23
-# ╟─5f9e308c-649d-4b7d-b5c8-dd751f5fa422
-# ╠═2308507d-3ec6-4e83-90c0-9a8be9e6abc3
+# ╟─50f20aba-a518-40c9-9753-41ca0916fec9
+# ╟─494e820b-264b-44aa-869e-06ce5fd2028a
 # ╟─11a1327c-dfc7-4197-98de-c931089a5fd7
-# ╠═e8bad54b-3061-4097-8b58-1a960186218f
-# ╠═0e2decf2-9ae3-46cf-b67a-e521bb6f6fd3
-# ╟─87406be9-759c-4cf0-b33f-4ecdb806a3dc
-# ╠═61ef085a-60a9-435d-b44e-3cfeffab2b53
-# ╠═0b1a7ddc-e05a-450a-b348-a2d104eb50ca
-# ╟─f4ffb3a4-cab1-4612-8e00-e17dc8dfc6e6
-# ╠═2c03c7b9-24d3-4c47-a93e-9516c2ed8871
-# ╟─9d49aea0-1c67-4476-8b68-32c3fcd907fc
-# ╠═0272a7a8-3ea1-4b2c-8155-926d5c577f82
-# ╠═81f306ba-eb85-496c-a83e-8c3029306eb7
+# ╟─7473f48b-84d2-4155-b927-1d493b8e948d
+# ╟─7859a78b-f7e4-4f62-bd58-1ec7a194fa33
+# ╟─6a1d5a3d-24d8-420c-a8b7-14ee7f359a47
+# ╟─4c697e14-9cb6-4bad-937b-1005c75abf5c
+# ╟─7f58f60b-b52e-459b-829a-bbff79b96c70
+# ╟─5c14c421-0191-499f-9e87-b153a7194cca
+# ╟─55830bf9-ad62-4960-a269-95d5029d67c6
+# ╠═5bf6254a-f385-4458-93ca-bab6a8ebd0c2
+# ╠═f8d71301-6577-41cc-8045-aa75c161b138
+# ╠═814d16d2-ca88-41f5-85e8-4c3f9712b12c
+# ╠═ddeb0da4-ed10-4daf-92c7-bf210a3d507e
+# ╠═622a86e2-95fa-46eb-a9e5-bb914372bd48
+# ╠═6611f2d4-47a8-4df4-9cb2-d52ab20faf15
 # ╠═6609e51d-11cc-4b1d-8e38-a660b08c0b6e
+# ╠═9ed4191b-9890-447b-ab24-21084c101409
+# ╠═33f56399-0bd2-4dce-94ab-1ff5d9a6cd15
 # ╟─841196dc-36ba-4d0f-8ce1-3794f4f06efc
 # ╟─62361e9e-5aa0-4b7f-9617-6f0ac313807b
 # ╟─0638aa65-0e56-4f6d-b763-3011d971e1e4
