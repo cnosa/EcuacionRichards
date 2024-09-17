@@ -4,6 +4,16 @@
 using Markdown
 using InteractiveUtils
 
+# This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
+macro bind(def, element)
+    quote
+        local iv = try Base.loaded_modules[Base.PkgId(Base.UUID("6e696c72-6542-2067-7265-42206c756150"), "AbstractPlutoDingetjes")].Bonds.initial_value catch; b -> missing; end
+        local el = $(esc(element))
+        global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : iv(el)
+        el
+    end
+end
+
 # ╔═╡ 0c60cb0d-e732-49d9-accc-a7830fd923dd
 begin
 	using LinearAlgebra
@@ -11,6 +21,7 @@ begin
 	using PlutoUI
 	using Images
 	using SparseArrays
+	using Interpolations
 end
 
 # ╔═╡ d7b1efc8-ae25-4393-950b-02e948f31438
@@ -324,11 +335,77 @@ load("C:\\Users\\carlo\\OneDrive\\Documents\\Proyectos\\EcuacionRichards\\Qh4.pn
 
 # ╔═╡ 6a1d5a3d-24d8-420c-a8b7-14ee7f359a47
 md"""
-Recordemos que se propone encontrar la solución de la ecuación diferencial parcial con condiciones de frontera en el espacio de funciones lineales a trozos sobre el dominio $\Omega$, que en realidad es una interpolación lineal realizada sobre los nodos.
+Recordemos que se propone encontrar la solución de la ecuación diferencial parcial con condiciones de frontera en el espacio de funciones lineales a trozos sobre el dominio $\Omega$, que en realidad es una interpolación lineal realizada sobre los nodos. En la siguiente imágen, de izquierda a derecha, se encuentra el elemento base $\bar{K} = [-1,1]\times [-1,1]$, las cuatro funciones base correspondientes al elemento base $\bar{\phi}_i$ y finalmente, la forma de una función de interpolación lineal sobre el dominio $\Omega$.
 """
 
 # ╔═╡ 4c697e14-9cb6-4bad-937b-1005c75abf5c
 load("C:\\Users\\carlo\\OneDrive\\Documents\\Proyectos\\EcuacionRichards\\ElementoBase.png")
+
+# ╔═╡ 3fb57f96-4c16-4d60-956b-3c4f8f934693
+md"""
+Las funciones base satisfacen que $\bar{\phi}_i(P_j) = \delta_{ij}$ donde $\delta_{ij}$ es el delta de Kronecker y $i,j=1,2,3,4$. Para poder realizar la integración sobre cada elemento $K = [a,b]\times [c,d]$ con $b-a=d-c = \frac{1}{N}$ podemos hacer una transformación de la siguiente manera: Sea $T:K\to \bar{K}$ la transformación lineal definida como 
+
+$\left[\begin{array}{r}
+\bar{x}\\
+\bar{z}
+\end{array}\right] = T\left[\begin{array}{r}
+x \\
+z
+\end{array}\right] = \left[\begin{array}{cc}
+\frac{2}{b-a} & 0 \\
+0 & \frac{2}{d-c}
+\end{array}\right] \left(\left[\begin{array}{r}
+x \\
+z
+\end{array}\right]-\left[\begin{array}{r}
+a \\
+c
+\end{array}\right]\right)+ \left[\begin{array}{r}
+-1 \\
+-1
+\end{array}\right]$
+
+$\left[\begin{array}{r}
+x\\
+z
+\end{array}\right] = T^{-1}\left[\begin{array}{r}
+\bar{x} \\
+\bar{z}
+\end{array}\right] = \left[\begin{array}{cc}
+\frac{b-a}{2} & 0 \\
+0 & \frac{d-c}{2}
+\end{array}\right] \left(\left[\begin{array}{r}
+\bar{x} \\
+\bar{z}
+\end{array}\right]-\left[\begin{array}{r}
+-1 \\
+-1
+\end{array}\right]\right)+ \left[\begin{array}{r}
+a \\
+c
+\end{array}\right]$
+
+Es fácil notar que estra transformación es inyectiva. Por lo tanto, para una función $h$ con $K\subseteq dom(h)$
+
+$\int_{K} h = \int_{a}^{b} \int_{c}^{d}h(x,z)dx dz = \int_{-1}^{1}\int_{-1}^{1}h\circ T^{-1}(\bar{x},\bar{z}) \frac{\partial(x,z)}{\partial(\bar{x},\bar{z})}d\bar{x}d\bar{z}$
+
+donde $\frac{\partial(x,z)}{\partial(\bar{x},\bar{z})}$ es el jacobiano de la transformación $T^{-1}$, por ende $\frac{\partial(x,z)}{\partial(\bar{x},\bar{z})} = |DT^{-1}| = \frac{(b-a)(d-c)}{4} = \frac{1}{4 N^2}$, luego
+
+$\int_{K} h = \frac{1}{4 N^2} \int_{\bar{K}} h\circ T^{-1}$
+"""
+
+# ╔═╡ 02092bc1-5498-42dd-8abb-dee2298eb240
+md"""
+Las funciones sobre los nodos del elemento $K$ pueden ser descritas como
+
+$\phi_{i}(x,z) = \bar{\phi}_{i}\circ T (x,z)$
+
+$\nabla \phi_{i}(x,z) = DT(x,z) \cdot \nabla\bar{\phi}_{i}\circ T (x,z)$
+
+para todo $(x,z)\in K$.
+
+A continuación se ilustra la transformación que hace $T$ entre $K$ y $\bar{K}$.
+"""
 
 # ╔═╡ 7f58f60b-b52e-459b-829a-bbff79b96c70
 load("C:\\Users\\carlo\\OneDrive\\Documents\\Proyectos\\EcuacionRichards\\T.png")
@@ -336,16 +413,36 @@ load("C:\\Users\\carlo\\OneDrive\\Documents\\Proyectos\\EcuacionRichards\\T.png"
 # ╔═╡ 5c14c421-0191-499f-9e87-b153a7194cca
 md"""
 Para hacer la integración necesitada en la formulación débil del problema usamos el método de cuadratura de Gauss.
+La integral de una función $h$ tal que $K\subseteq dom(h)$ se aproxima de la siguiente manera:
+
+$\int_{K}h = \frac{1}{4 N^{2}} \int_{\bar{K}} h\circ T^{-1} \approx \frac{1}{4 N^{2}}\sum_{i,j = 1}^{3} w_{i}w_{j} h\circ T^{-1}(\xi_{i},\xi_{j})$
+
+donde $w_{\ell}$ son los pesos de la cuadratura y $\xi_{\ell} \in [-1,1]$ son los puntos de evaluación de la cuadratura. La siguiente ilustración indica que los puntos de evaluación deben ser transformados del elemento base $\bar{K}$ al elemento $K$ para poder hacer la evaluación en la función $h$, esto mediante la función $T^{-1}$.
 """
 
 # ╔═╡ 55830bf9-ad62-4960-a269-95d5029d67c6
 load("C:\\Users\\carlo\\OneDrive\\Documents\\Proyectos\\EcuacionRichards\\Cuadratura.png")
 
 # ╔═╡ 5bf6254a-f385-4458-93ca-bab6a8ebd0c2
+md"""
+La lista de funciones base sobre $\bar{K}$ se muestran a continuación.
+"""
 
+# ╔═╡ 46ca6cdb-a937-4485-bfda-7df84c20c492
+
+
+# ╔═╡ d5e97c89-8e97-41c4-8902-74fe3fb399d2
+md"""
+Creamos un deslizador para controlar la cantidad de particiones $N$ que se está haciendo en cada lado del cuadrado.
+"""
 
 # ╔═╡ f8d71301-6577-41cc-8045-aa75c161b138
-N = 16
+NS = @bind N Slider(4:4:40)
+
+# ╔═╡ 5e1a2302-5708-4279-a2a5-8b6c5f7bc210
+md"""
+En la siguiente celda se definen las funciones base y sus gradientes sobre $\bar{K}$. También se definen los pesos $\omega$ y puntos de evaluación de la cuadratura $\xi$.
+"""
 
 # ╔═╡ 814d16d2-ca88-41f5-85e8-4c3f9712b12c
 begin
@@ -383,8 +480,10 @@ begin
 			(sqrt(3/5),-sqrt(3/5)) (sqrt(3/5),0) (sqrt(3/5),sqrt(3/5))];
 end
 
-# ╔═╡ ddeb0da4-ed10-4daf-92c7-bf210a3d507e
-map(p->∂ϕ10(p[1],p[2]),ξ₀)
+# ╔═╡ a5679930-f946-4829-b590-63aa3f07e9b3
+md"""
+Se crea una función que ejecuta el método de los elementos finitos para encontrar una solución inicial $\Psi^{0}$ como se planteó anteriormente.
+"""
 
 # ╔═╡ 622a86e2-95fa-46eb-a9e5-bb914372bd48
 function SolucionInicial(N0)
@@ -395,7 +494,7 @@ function SolucionInicial(N0)
 	dofsD = 1:N0+1
 	dofsfree = (N0+2):(N0+1)^2
 
-	#Funciones base
+	#Funciones base y sus gradientes evaluadas en los puntos de cuadratura
 	ϕ1 = map(p->ϕ10(p[1],p[2]),ξ₀)
 	ϕ2 = map(p->ϕ20(p[1],p[2]),ξ₀)
 	ϕ3 = map(p->ϕ30(p[1],p[2]),ξ₀)
@@ -406,7 +505,6 @@ function SolucionInicial(N0)
 	∂ϕ4 = map(p->∂ϕ40(p[1],p[2]),ξ₀)
 	ϕ = (ϕ1,ϕ2,ϕ3,ϕ4)
 	∂ϕ = (∂ϕ1,∂ϕ2,∂ϕ3,∂ϕ4)
-	ω = 0.5 * (1/N0) * ω₀
 
 	#Funcion que coloca los puntos de cuadratura sobre cada elemento
 	function Tinvξ(a,c)
@@ -424,8 +522,8 @@ function SolucionInicial(N0)
 		ξ = Tinvξ(P1[1],P1[2]-1/N0)
 
 		#Matrices locales
-		Alocal = [G(3) * ω' * dot.(∂ϕ[i],∂ϕ[j]) * ω for i in 1:4, j in 1:4]
-		blocal = [ω'* (map(p->f(p[1],p[2]),ξ) .* ϕ[i]) * ω - G(3) * ω'*dot.(map(p->[0,1],ξ), ∂ϕ[i]) * ω for i in 1:4]
+		Alocal = [ G(3) * ω₀' * dot.(∂ϕ[i],∂ϕ[j]) * ω₀ for i in 1:4, j in 1:4]
+		blocal = [(0.25/N0^2) * ω₀'* (map(p->f(p[1],p[2]),ξ) .* ϕ[i]) * ω₀- (0.5/N0) * G(3) * ω₀'*dot.(map(p->[0,1],ξ), ∂ϕ[i]) * ω₀ for i in 1:4]
 		
 		#Ensamblaje de las matrices globales
 		A[dof,dof] += Alocal    
@@ -440,27 +538,36 @@ function SolucionInicial(N0)
 	return Solucion0
 end
 
-# ╔═╡ 6611f2d4-47a8-4df4-9cb2-d52ab20faf15
-SolucionInicial(10)
-
 # ╔═╡ 6609e51d-11cc-4b1d-8e38-a660b08c0b6e
 begin
-	xmesh = 0:(1/N):1
-	zmesh = -1:(1/N):0	
-	plot(xmesh, zmesh,reverse(reshape(SolucionInicial(N),N+1,N+1)'), st=:surface, xlabel="x", ylabel="z", zlabel="", title="",color=:viridis,camera=(0, 90))
+
+	heatmap(0:(1/N):1,-1:(1/N):0,reverse(reshape(SolucionInicial(N),N+1,N+1)'), st=:surface, xlabel="x", ylabel="z", zlabel="", title="",color=:viridis)
 	
 end
 
-# ╔═╡ 9ed4191b-9890-447b-ab24-21084c101409
-function F(psi,Lambda)
-	
-	return 1
-end
+# ╔═╡ 841196dc-36ba-4d0f-8ce1-3794f4f06efc
+md"""
+### Iteración de Newton
+"""
 
 # ╔═╡ 33f56399-0bd2-4dce-94ab-1ff5d9a6cd15
-function hdeNewton(N,Ψ)
-	#Malla (lista de elementos)
-	Qh=Array{Element}(undef,N*N);
+function hdeNewton(Ψold)
+	N = Int(sqrt(length(Ψold))-1)
+	Ψnew = zeros(length(Ψold))
+	S = reverse(reshape(Ψold,N+1,N+1))[N+1:-1:1,:]
+	Ψoldint = interpolate((0:(1/N):1,-1:(1/N):0),S, Gridded(Linear()))
+	
+	function Ψpold(x,z)
+			eps = 1/(1000*N)
+			xfor =  Ψoldint(x+eps,z)
+			xback = Ψoldint(x-eps,z)
+			zfor = Ψoldint(x,z+eps)
+			zback = Ψoldint(x,z-eps)
+			dx = (xfor-xback)/(2*eps)
+			dz = (zfor-zback)/(2*eps)
+			return [dx,dz]
+	end
+	
 
 	#Matrices globales
 	A=zeros((N+1)^2,(N+1)^2);
@@ -480,15 +587,14 @@ function hdeNewton(N,Ψ)
 	∂ϕ4 = map(p->∂ϕ40(p[1],p[2]),ξ₀)
 	ϕ = (ϕ1,ϕ2,ϕ3,ϕ4)
 	∂ϕ = (∂ϕ1,∂ϕ2,∂ϕ3,∂ϕ4)
-	ω = 0.5 * (1/N0) * ω₀
 
 	#Funcion que coloca los puntos de cuadratura sobre cada elemento
 	function Tinvξ(a,c)
-		ξ₀₀ = map(p -> ((0.5/N0)*(p[1]+1)+a,(0.5/N0)*(p[2]+1)+c), ξ₀)
+		ξ₀₀ = map(p -> ((0.5/N)*(p[1]+1)+a,(0.5/N)*(p[2]+1)+c), ξ₀)
 		return ξ₀₀
 	end
 	
-	dofs1 = [k for k in 1:(N0+1)^3 if k%(N0+1)!=0];
+	dofs1 = [k for k in 1:(N+1)^3 if k%(N+1)!=0];
 
 	
 	#Información necesaria de cada elemento
@@ -499,8 +605,9 @@ function hdeNewton(N,Ψ)
 		ξ = Tinvξ(P1[1],P1[2]-1/N)
 
 		#Matrices locales
-		Alocal = [G(3) * ω' * dot.(∂ϕ[i],∂ϕ[j]) * ω for i in 1:4, j in 1:4]
-		blocal = [ω'* (map(p->f(p[1],p[2]),ξ) .* ϕ[i]) * ω - G(3) * ω'*dot.(map(p->[0,1],ξ), ∂ϕ[i]) * ω for i in 1:4]
+		Alocal = [(0.5/N)* ω₀' * (map(p->G(Ψoldint(p[1],p[2])),ξ) .* ϕ[i] .* dot.(map(p->Ψpold(p[1],p[2])+[0,1],ξ),∂ϕ[j])) * ω₀ + ω₀' * (map(p->G(Ψoldint(p[1],p[2])),ξ) * dot.(∂ϕ[i],∂ϕ[j])) * ω₀ for i in 1:4, j in 1:4]
+
+		blocal = [(0.5/N) * ω₀'* (map(p->G(Ψoldint(p[1],p[2])),ξ) .* dot.(map(p->Ψpold(p[1],p[2])+[0,1],ξ),∂ϕ[i])) * ω₀  + (0.25/N^2) * ω₀'* (map(p->f(p[1],p[2]),ξ) .* ϕ[i]) * ω₀ for i in 1:4]
 
 		
 		#Ensamblaje de las matrices globales
@@ -514,13 +621,43 @@ function hdeNewton(N,Ψ)
 	Solucion[dofsD] = zeros(length(dofsD)) 
 	Solucion[dofsfree] = A[dofsfree,dofsfree]\(b[dofsfree]  - A[dofsfree,dofsD] * Solucion[dofsD]); 
 
-	return Solucion
+	Ψnew = Ψold + Solucion
+	return Ψnew
 end
 
-# ╔═╡ 841196dc-36ba-4d0f-8ce1-3794f4f06efc
+# ╔═╡ fb6aabc3-84ef-4007-9b4e-e42e7371eb20
+hdeNewton(hdeNewton(SolucionInicial(10)))
+
+# ╔═╡ 0c077978-fa41-4c8d-ac50-4d56dd34727e
+SolucionInicial(10)
+
+# ╔═╡ 6e1e75e4-4dca-437b-b800-b405905187be
+maximum(abs.(hdeNewton(SolucionInicial(50)) - SolucionInicial(50))) 
+
+# ╔═╡ 0267d392-386a-43bc-a276-280ef313d3d5
+begin
+	Ψ = SolucionInicial(5)
+	SolucionesIter = zeros(36,60)
+	SolucionesIter[:,1] = Ψ
+	NormaS = zeros(5)
+	for iter in 2:5
+		SolucionesIter[:,iter] = hdeNewton(Ψ)
+		NormaS[iter] = maximum(abs.(SolucionesIter[:,iter]- SolucionesIter[:,iter-1]))
+		Ψ = SolucionesIter[:,iter]
+	end
+	NormaS
+end
+
+# ╔═╡ c7f1d968-792b-42dc-959e-7da1c5067e27
+SolucionesIter[:,1:5]
+
+# ╔═╡ c460704c-2170-4880-b268-3489855fe131
 md"""
-### Iteración de Newton
+**Algoritmo que implementa el método de Newton**
 """
+
+# ╔═╡ 93cae015-a919-48c3-9980-dd093e44f642
+
 
 # ╔═╡ 62361e9e-5aa0-4b7f-9617-6f0ac313807b
 md"""
@@ -538,6 +675,7 @@ md"""
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
 Images = "916415d5-f1e6-5110-898d-aaa5f9f070e0"
+Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
@@ -545,6 +683,7 @@ SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
 [compat]
 Images = "~0.26.0"
+Interpolations = "~0.15.1"
 Plots = "~1.39.0"
 PlutoUI = "~0.7.58"
 """
@@ -555,7 +694,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.9.2"
 manifest_format = "2.0"
-project_hash = "99fcc1bb1ceb99198ed720ec2c61e7d1253acb5e"
+project_hash = "2753de9b6c276465788d4d37ad7e9df66c7265e5"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -570,15 +709,15 @@ weakdeps = ["ChainRulesCore", "Test"]
 
 [[deps.AbstractPlutoDingetjes]]
 deps = ["Pkg"]
-git-tree-sha1 = "0f748c81756f2e5e6854298f11ad8b2dfae6911a"
+git-tree-sha1 = "6e1d2a35f2f90a4bc7c2ed98079b2ba09c35b83a"
 uuid = "6e696c72-6542-2067-7265-42206c756150"
-version = "1.3.0"
+version = "1.3.2"
 
 [[deps.Adapt]]
 deps = ["LinearAlgebra", "Requires"]
-git-tree-sha1 = "cea4ac3f5b4bc4b3000aa55afb6e5626518948fa"
+git-tree-sha1 = "6a55b747d1812e699320963ffde36f1ebdda4099"
 uuid = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
-version = "4.0.3"
+version = "4.0.4"
 weakdeps = ["StaticArrays"]
 
     [deps.Adapt.extensions]
@@ -590,9 +729,9 @@ version = "1.1.1"
 
 [[deps.ArnoldiMethod]]
 deps = ["LinearAlgebra", "Random", "StaticArrays"]
-git-tree-sha1 = "62e51b39331de8911e4a7ff6f5aaf38a5f4cc0ae"
+git-tree-sha1 = "d57bd3762d308bded22c3b82d033bff85f6195c6"
 uuid = "ec485272-7323-5ecc-a04f-4719b315124d"
-version = "0.2.0"
+version = "0.4.0"
 
 [[deps.ArrayInterface]]
 deps = ["Adapt", "LinearAlgebra", "Requires", "SparseArrays", "SuiteSparse"]
@@ -710,9 +849,9 @@ version = "3.24.0"
 
 [[deps.ColorTypes]]
 deps = ["FixedPointNumbers", "Random"]
-git-tree-sha1 = "eb7f0f8307f71fac7c606984ea5fb2817275d6e4"
+git-tree-sha1 = "b10d0b65641d57b8b4d5e234446582de5047050d"
 uuid = "3da002f7-5984-5a60-b8a6-cbb66c0b333f"
-version = "0.11.4"
+version = "0.11.5"
 
 [[deps.ColorVectorSpace]]
 deps = ["ColorTypes", "FixedPointNumbers", "LinearAlgebra", "SpecialFunctions", "Statistics", "TensorCore"]
@@ -753,9 +892,9 @@ uuid = "f0e56b4a-5159-44fe-b623-3e5288b988bb"
 version = "2.4.1"
 
 [[deps.Contour]]
-git-tree-sha1 = "d05d9e7b7aedff4e5b51a029dced05cfb6125781"
+git-tree-sha1 = "439e35b0b36e2e5881738abc8857bd92ad6ff9a8"
 uuid = "d38c429a-6771-53c6-b99e-75d170b6e991"
-version = "0.6.2"
+version = "0.6.3"
 
 [[deps.CoordinateTransformations]]
 deps = ["LinearAlgebra", "StaticArrays"]
@@ -781,9 +920,9 @@ version = "1.16.0"
 
 [[deps.DataStructures]]
 deps = ["Compat", "InteractiveUtils", "OrderedCollections"]
-git-tree-sha1 = "0f4b5d62a88d8f59003e43c25a8a90de9eb76317"
+git-tree-sha1 = "1d0a14036acb104d9e89698bd408f63ab58cdc82"
 uuid = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
-version = "0.18.18"
+version = "0.18.20"
 
 [[deps.Dates]]
 deps = ["Printf"]
@@ -835,9 +974,9 @@ version = "0.1.10"
 
 [[deps.Expat_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "4558ab818dcceaab612d1bb8c19cee87eda2b83c"
+git-tree-sha1 = "1c6317308b9dc757616f0b5cb379db10494443a7"
 uuid = "2e619515-83b5-522b-bb60-26c02a35a201"
-version = "2.5.0+0"
+version = "2.6.2+0"
 
 [[deps.FFMPEG]]
 deps = ["FFMPEG_jll"]
@@ -871,9 +1010,9 @@ version = "3.3.10+0"
 
 [[deps.FileIO]]
 deps = ["Pkg", "Requires", "UUIDs"]
-git-tree-sha1 = "c5c28c245101bd59154f649e19b038d15901b5dc"
+git-tree-sha1 = "82d8afa92ecf4b52d78d869f038ebfb881267322"
 uuid = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
-version = "1.16.2"
+version = "1.16.3"
 
 [[deps.FileWatching]]
 uuid = "7b1f6079-737a-58dc-b8bc-7a2ca5c1b5ee"
@@ -891,9 +1030,9 @@ uuid = "a3f928ae-7b40-5064-980b-68af3947d34b"
 version = "2.13.93+0"
 
 [[deps.Format]]
-git-tree-sha1 = "f3cf88025f6d03c194d73f5d13fee9004a108329"
+git-tree-sha1 = "9c68794ef81b08086aeb32eeaf33531668d5f5fc"
 uuid = "1fa38f19-a742-5d3f-a2b9-30dd87b9d5f8"
-version = "1.3.6"
+version = "1.3.7"
 
 [[deps.FreeType2_jll]]
 deps = ["Artifacts", "Bzip2_jll", "JLLWrappers", "Libdl", "Zlib_jll"]
@@ -957,9 +1096,9 @@ version = "1.3.14+0"
 
 [[deps.Graphs]]
 deps = ["ArnoldiMethod", "Compat", "DataStructures", "Distributed", "Inflate", "LinearAlgebra", "Random", "SharedArrays", "SimpleTraits", "SparseArrays", "Statistics"]
-git-tree-sha1 = "899050ace26649433ef1af25bc17a815b3db52b7"
+git-tree-sha1 = "3863330da5466410782f2bffc64f3d505a6a8334"
 uuid = "86223c79-3864-5bf0-83f7-82e725a168b6"
-version = "1.9.0"
+version = "1.10.0"
 
 [[deps.Grisu]]
 git-tree-sha1 = "53bb909d1151e57e2484c3d1b53e19552b887fb2"
@@ -968,9 +1107,9 @@ version = "1.0.2"
 
 [[deps.HTTP]]
 deps = ["Base64", "CodecZlib", "ConcurrentUtilities", "Dates", "ExceptionUnwrapping", "Logging", "LoggingExtras", "MbedTLS", "NetworkOptions", "OpenSSL", "Random", "SimpleBufferStream", "Sockets", "URIs", "UUIDs"]
-git-tree-sha1 = "db864f2d91f68a5912937af80327d288ea1f3aee"
+git-tree-sha1 = "2c3ec1f90bb4a8f7beafb0cffea8a4c3f4e636ab"
 uuid = "cd3eb016-35fb-5094-929b-558a96fad6f3"
-version = "1.10.3"
+version = "1.10.6"
 
 [[deps.HarfBuzz_jll]]
 deps = ["Artifacts", "Cairo_jll", "Fontconfig_jll", "FreeType2_jll", "Glib_jll", "Graphite2_jll", "JLLWrappers", "Libdl", "Libffi_jll", "Pkg"]
@@ -1117,15 +1256,15 @@ version = "0.10.1"
 
 [[deps.Images]]
 deps = ["Base64", "FileIO", "Graphics", "ImageAxes", "ImageBase", "ImageBinarization", "ImageContrastAdjustment", "ImageCore", "ImageCorners", "ImageDistances", "ImageFiltering", "ImageIO", "ImageMagick", "ImageMetadata", "ImageMorphology", "ImageQualityIndexes", "ImageSegmentation", "ImageShow", "ImageTransformations", "IndirectArrays", "IntegralArrays", "Random", "Reexport", "SparseArrays", "StaticArrays", "Statistics", "StatsBase", "TiledIteration"]
-git-tree-sha1 = "d438268ed7a665f8322572be0dabda83634d5f45"
+git-tree-sha1 = "12fdd617c7fe25dc4a6cc804d657cc4b2230302b"
 uuid = "916415d5-f1e6-5110-898d-aaa5f9f070e0"
-version = "0.26.0"
+version = "0.26.1"
 
 [[deps.Imath_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "3d09a9f60edf77f8a4d99f9e015e8fbf9989605d"
+git-tree-sha1 = "0936ba688c6d201805a83da835b55c61a180db52"
 uuid = "905a6f67-0a94-5f89-b386-d35d92009cd1"
-version = "3.1.7+0"
+version = "3.1.11+0"
 
 [[deps.IndirectArrays]]
 git-tree-sha1 = "012e604e1c7458645cb8b436f8fba789a51b257f"
@@ -1145,9 +1284,9 @@ version = "0.1.5"
 
 [[deps.IntelOpenMP_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "5fdf2fe6724d8caabf43b557b84ce53f3b7e2f6b"
+git-tree-sha1 = "be50fe8df3acbffa0274a744f1a99d29c45a57f4"
 uuid = "1d5cc7b8-4909-519e-a0f8-d0f5ad9712d0"
-version = "2024.0.2+0"
+version = "2024.1.0+0"
 
 [[deps.InteractiveUtils]]
 deps = ["Markdown"]
@@ -1251,9 +1390,9 @@ version = "1.3.1"
 
 [[deps.Latexify]]
 deps = ["Format", "InteractiveUtils", "LaTeXStrings", "MacroTools", "Markdown", "OrderedCollections", "Requires"]
-git-tree-sha1 = "cad560042a7cc108f5a4c24ea1431a9221f22c1b"
+git-tree-sha1 = "e0b5cd21dc1b44ec6e64f351976f961e6f31d6c4"
 uuid = "23fbe1c1-3f47-55db-b15f-69d7ec21a316"
-version = "0.16.2"
+version = "0.16.3"
 
     [deps.Latexify.extensions]
     DataFramesExt = "DataFrames"
@@ -1307,10 +1446,10 @@ uuid = "e9f186c6-92d2-5b65-8a66-fee21dc1b490"
 version = "3.2.2+1"
 
 [[deps.Libgcrypt_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl", "Libgpg_error_jll", "Pkg"]
-git-tree-sha1 = "64613c82a59c120435c067c2b809fc61cf5166ae"
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Libgpg_error_jll"]
+git-tree-sha1 = "9fd170c4bbfd8b935fdc5f8b7aa33532c991a673"
 uuid = "d4300ac3-e22c-5743-9152-c294e39db1e4"
-version = "1.8.7+0"
+version = "1.8.11+0"
 
 [[deps.Libglvnd_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg", "Xorg_libX11_jll", "Xorg_libXext_jll"]
@@ -1332,9 +1471,9 @@ version = "1.17.0+0"
 
 [[deps.Libmount_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "dae976433497a2f841baadea93d27e68f1a12a97"
+git-tree-sha1 = "4b683b19157282f50bfd5dcaa2efe5295814ea22"
 uuid = "4b2f31a3-9ecc-558c-b454-b3730dcb73e9"
-version = "2.39.3+0"
+version = "2.40.0+0"
 
 [[deps.Libtiff_jll]]
 deps = ["Artifacts", "JLLWrappers", "JpegTurbo_jll", "LERC_jll", "Libdl", "XZ_jll", "Zlib_jll", "Zstd_jll"]
@@ -1344,9 +1483,9 @@ version = "4.5.1+1"
 
 [[deps.Libuuid_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "0a04a1318df1bf510beb2562cf90fb0c386f58c4"
+git-tree-sha1 = "27fd5cc10be85658cacfe11bb81bee216af13eda"
 uuid = "38a345b3-de98-5d2b-a5d3-14cd9215e700"
-version = "2.39.3+1"
+version = "2.40.0+0"
 
 [[deps.LinearAlgebra]]
 deps = ["Libdl", "OpenBLAS_jll", "libblastrampoline_jll"]
@@ -1385,9 +1524,9 @@ version = "1.0.3"
 
 [[deps.LoopVectorization]]
 deps = ["ArrayInterface", "CPUSummary", "CloseOpenIntervals", "DocStringExtensions", "HostCPUFeatures", "IfElse", "LayoutPointers", "LinearAlgebra", "OffsetArrays", "PolyesterWeave", "PrecompileTools", "SIMDTypes", "SLEEFPirates", "Static", "StaticArrayInterface", "ThreadingUtilities", "UnPack", "VectorizationBase"]
-git-tree-sha1 = "0f5648fbae0d015e3abe5867bca2b362f67a5894"
+git-tree-sha1 = "8f6786d8b2b3248d79db3ad359ce95382d5a6df8"
 uuid = "bdcacae8-1622-11e9-2a5c-532679323890"
-version = "0.12.166"
+version = "0.12.170"
 
     [deps.LoopVectorization.extensions]
     ForwardDiffExt = ["ChainRulesCore", "ForwardDiff"]
@@ -1404,10 +1543,10 @@ uuid = "6c6e2e6c-3030-632d-7369-2d6c69616d65"
 version = "0.1.4"
 
 [[deps.MKL_jll]]
-deps = ["Artifacts", "IntelOpenMP_jll", "JLLWrappers", "LazyArtifacts", "Libdl"]
-git-tree-sha1 = "72dc3cf284559eb8f53aa593fe62cb33f83ed0c0"
+deps = ["Artifacts", "IntelOpenMP_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "oneTBB_jll"]
+git-tree-sha1 = "80b2833b56d466b3858d565adcd16a4a05f2089b"
 uuid = "856f044c-d86e-5d09-b602-aeab76dc8ba7"
-version = "2024.0.0+0"
+version = "2024.1.0+0"
 
 [[deps.MacroTools]]
 deps = ["Markdown", "Random"]
@@ -1453,9 +1592,9 @@ version = "0.7.2"
 
 [[deps.Missings]]
 deps = ["DataAPI"]
-git-tree-sha1 = "f66bdc5de519e8f8ae43bdc598782d35a25b1272"
+git-tree-sha1 = "ec4f7fbeab05d7747bdf98eb74d130a2a2ed298d"
 uuid = "e1d29d7a-bbdc-5cf2-9ac0-f12de2c33e28"
-version = "1.1.0"
+version = "1.2.0"
 
 [[deps.Mmap]]
 uuid = "a63ad114-7e13-5084-954f-fe012c677804"
@@ -1493,9 +1632,9 @@ uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"
 version = "1.2.0"
 
 [[deps.OffsetArrays]]
-git-tree-sha1 = "6a731f2b5c03157418a20c12195eb4b74c8f8621"
+git-tree-sha1 = "e64b4f5ea6b7389f6f046d13d4896a8f9c1ba71e"
 uuid = "6fe1bfb0-de20-5000-8ca7-80f57d26f881"
-version = "1.13.0"
+version = "1.14.0"
 weakdeps = ["Adapt"]
 
     [deps.OffsetArrays.extensions]
@@ -1520,9 +1659,9 @@ version = "0.3.2"
 
 [[deps.OpenEXR_jll]]
 deps = ["Artifacts", "Imath_jll", "JLLWrappers", "Libdl", "Zlib_jll"]
-git-tree-sha1 = "a4ca623df1ae99d09bc9868b008262d0c0ac1e4f"
+git-tree-sha1 = "8292dd5c8a38257111ada2174000a33745b06d4e"
 uuid = "18a262bb-aa17-5467-a713-aee519bc75cb"
-version = "3.1.4+0"
+version = "3.2.4+0"
 
 [[deps.OpenJpeg_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Libtiff_jll", "LittleCMS_jll", "libpng_jll"]
@@ -1537,15 +1676,15 @@ version = "0.8.1+0"
 
 [[deps.OpenSSL]]
 deps = ["BitFlags", "Dates", "MozillaCACerts_jll", "OpenSSL_jll", "Sockets"]
-git-tree-sha1 = "af81a32750ebc831ee28bdaaba6e1067decef51e"
+git-tree-sha1 = "38cb508d080d21dc1128f7fb04f20387ed4c0af4"
 uuid = "4d8831e6-92b7-49fb-bdf8-b643e874388c"
-version = "1.4.2"
+version = "1.4.3"
 
 [[deps.OpenSSL_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "60e3045590bd104a16fefb12836c00c0ef8c7f8c"
+git-tree-sha1 = "3da7367955dcc5c54c1ba4d402ccdc09a1a3e046"
 uuid = "458c3c95-2e84-50aa-8efc-19380b2a3a95"
-version = "3.0.13+0"
+version = "3.0.13+1"
 
 [[deps.OpenSpecFun_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl", "Pkg"]
@@ -1649,9 +1788,9 @@ version = "1.39.0"
 
 [[deps.PlutoUI]]
 deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "FixedPointNumbers", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "JSON", "Logging", "MIMEs", "Markdown", "Random", "Reexport", "URIs", "UUIDs"]
-git-tree-sha1 = "71a22244e352aa8c5f0f2adde4150f62368a3f2e"
+git-tree-sha1 = "ab55ee1510ad2af0ff674dbcced5e94921f867a9"
 uuid = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
-version = "0.7.58"
+version = "0.7.59"
 
 [[deps.PolyesterWeave]]
 deps = ["BitTwiddlingConvenienceFunctions", "CPUSummary", "IfElse", "Static", "ThreadingUtilities"]
@@ -1921,9 +2060,9 @@ version = "1.7.0"
 
 [[deps.StatsBase]]
 deps = ["DataAPI", "DataStructures", "LinearAlgebra", "LogExpFunctions", "Missings", "Printf", "Random", "SortingAlgorithms", "SparseArrays", "Statistics", "StatsAPI"]
-git-tree-sha1 = "1d77abd07f617c4868c33d4f5b9e1dbb2643c9cf"
+git-tree-sha1 = "5cf7606d6cef84b543b483848d4ae08ad9832b21"
 uuid = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
-version = "0.34.2"
+version = "0.34.3"
 
 [[deps.SuiteSparse]]
 deps = ["Libdl", "LinearAlgebra", "Serialization", "SparseArrays"]
@@ -1973,9 +2112,9 @@ uuid = "06e1c1a7-607b-532d-9fad-de7d9aa2abac"
 version = "0.5.0"
 
 [[deps.TranscodingStreams]]
-git-tree-sha1 = "3caa21522e7efac1ba21834a03734c57b4611c7e"
+git-tree-sha1 = "71509f04d045ec714c4748c785a59045c3736349"
 uuid = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
-version = "0.10.4"
+version = "0.10.7"
 weakdeps = ["Random", "Test"]
 
     [deps.TranscodingStreams.extensions]
@@ -2036,9 +2175,9 @@ version = "0.2.0"
 
 [[deps.VectorizationBase]]
 deps = ["ArrayInterface", "CPUSummary", "HostCPUFeatures", "IfElse", "LayoutPointers", "Libdl", "LinearAlgebra", "SIMDTypes", "Static", "StaticArrayInterface"]
-git-tree-sha1 = "7209df901e6ed7489fe9b7aa3e46fb788e15db85"
+git-tree-sha1 = "6129a4faf6242e7c3581116fbe3270f3ab17c90d"
 uuid = "3d5dd08c-fd9d-11e8-17fa-ed2836048c2f"
-version = "0.21.65"
+version = "0.21.67"
 
 [[deps.Vulkan_Loader_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Wayland_jll", "Xorg_libX11_jll", "Xorg_libXrandr_jll", "xkbcommon_jll"]
@@ -2066,9 +2205,9 @@ version = "1.0.0"
 
 [[deps.XML2_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Libiconv_jll", "Zlib_jll"]
-git-tree-sha1 = "07e470dabc5a6a4254ffebc29a1b3fc01464e105"
+git-tree-sha1 = "532e22cf7be8462035d092ff21fada7527e2c488"
 uuid = "02c8fc9c-b97f-50b9-bbe4-9be30ff0a78a"
-version = "2.12.5+0"
+version = "2.12.6+0"
 
 [[deps.XSLT_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Libgcrypt_jll", "Libgpg_error_jll", "Libiconv_jll", "Pkg", "XML2_jll", "Zlib_jll"]
@@ -2078,9 +2217,9 @@ version = "1.1.34+0"
 
 [[deps.XZ_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "31c421e5516a6248dfb22c194519e37effbf1f30"
+git-tree-sha1 = "ac88fb95ae6447c8dda6a5503f3bafd496ae8632"
 uuid = "ffd25f8a-64ca-5728-b0f7-c24cf3aae800"
-version = "5.6.1+0"
+version = "5.4.6+0"
 
 [[deps.Xorg_libICE_jll]]
 deps = ["Libdl", "Pkg"]
@@ -2233,9 +2372,9 @@ version = "1.2.13+0"
 
 [[deps.Zstd_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "49ce682769cd5de6c72dcf1b94ed7790cd08974c"
+git-tree-sha1 = "e678132f07ddb5bfa46857f0d7620fb9be675d3b"
 uuid = "3161d3a3-bdf6-5164-811a-617609db77b4"
-version = "1.5.5+0"
+version = "1.5.6+0"
 
 [[deps.eudev_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg", "gperf_jll"]
@@ -2319,6 +2458,12 @@ deps = ["Artifacts", "Libdl"]
 uuid = "8e850ede-7688-5339-a07c-302acd2aaf8d"
 version = "1.48.0+0"
 
+[[deps.oneTBB_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "7d0ea0f4895ef2f5cb83645fa689e52cb55cf493"
+uuid = "1317d2d5-d96f-522e-a858-c73665f53c3e"
+version = "2021.12.0+0"
+
 [[deps.p7zip_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
@@ -2347,8 +2492,8 @@ version = "1.4.1+1"
 # ╠═0c60cb0d-e732-49d9-accc-a7830fd923dd
 # ╠═d7b1efc8-ae25-4393-950b-02e948f31438
 # ╟─8237a50b-8297-4398-87ff-bdf0147a973f
-# ╟─5c78c360-e914-11ee-1c4a-b176cfb3b907
-# ╟─31d8cecd-5146-4afc-9ad3-175ffa7aa747
+# ╠═5c78c360-e914-11ee-1c4a-b176cfb3b907
+# ╠═31d8cecd-5146-4afc-9ad3-175ffa7aa747
 # ╟─a5366af3-1167-457d-aedb-cf56415cf1ab
 # ╠═f36fac19-3953-4cec-943f-1420fd469d45
 # ╟─772444f8-3b10-4fb2-8a83-7f49cff0e691
@@ -2356,29 +2501,39 @@ version = "1.4.1+1"
 # ╟─5f93b7cc-8222-49bb-8311-c3042d23c1eb
 # ╟─a908caae-e7cb-41ed-aa3b-1518f1fc0f5b
 # ╟─6a55bf47-7c07-4264-92ed-7b583a6de451
-# ╟─f2ac6978-bf9d-4495-ae87-9c5d69131abd
+# ╠═f2ac6978-bf9d-4495-ae87-9c5d69131abd
 # ╟─075c000f-a253-4126-bedb-c6db4e3b4fda
 # ╟─50f20aba-a518-40c9-9753-41ca0916fec9
 # ╟─494e820b-264b-44aa-869e-06ce5fd2028a
-# ╟─11a1327c-dfc7-4197-98de-c931089a5fd7
-# ╟─7473f48b-84d2-4155-b927-1d493b8e948d
+# ╠═11a1327c-dfc7-4197-98de-c931089a5fd7
+# ╠═7473f48b-84d2-4155-b927-1d493b8e948d
 # ╟─7859a78b-f7e4-4f62-bd58-1ec7a194fa33
 # ╟─6a1d5a3d-24d8-420c-a8b7-14ee7f359a47
-# ╟─4c697e14-9cb6-4bad-937b-1005c75abf5c
-# ╟─7f58f60b-b52e-459b-829a-bbff79b96c70
-# ╟─5c14c421-0191-499f-9e87-b153a7194cca
-# ╟─55830bf9-ad62-4960-a269-95d5029d67c6
+# ╠═4c697e14-9cb6-4bad-937b-1005c75abf5c
+# ╟─3fb57f96-4c16-4d60-956b-3c4f8f934693
+# ╠═02092bc1-5498-42dd-8abb-dee2298eb240
+# ╠═7f58f60b-b52e-459b-829a-bbff79b96c70
+# ╠═5c14c421-0191-499f-9e87-b153a7194cca
+# ╠═55830bf9-ad62-4960-a269-95d5029d67c6
 # ╠═5bf6254a-f385-4458-93ca-bab6a8ebd0c2
+# ╠═46ca6cdb-a937-4485-bfda-7df84c20c492
+# ╟─d5e97c89-8e97-41c4-8902-74fe3fb399d2
 # ╠═f8d71301-6577-41cc-8045-aa75c161b138
+# ╟─5e1a2302-5708-4279-a2a5-8b6c5f7bc210
 # ╠═814d16d2-ca88-41f5-85e8-4c3f9712b12c
-# ╠═ddeb0da4-ed10-4daf-92c7-bf210a3d507e
+# ╠═a5679930-f946-4829-b590-63aa3f07e9b3
 # ╠═622a86e2-95fa-46eb-a9e5-bb914372bd48
-# ╠═6611f2d4-47a8-4df4-9cb2-d52ab20faf15
 # ╠═6609e51d-11cc-4b1d-8e38-a660b08c0b6e
-# ╠═9ed4191b-9890-447b-ab24-21084c101409
+# ╠═841196dc-36ba-4d0f-8ce1-3794f4f06efc
 # ╠═33f56399-0bd2-4dce-94ab-1ff5d9a6cd15
-# ╟─841196dc-36ba-4d0f-8ce1-3794f4f06efc
+# ╠═fb6aabc3-84ef-4007-9b4e-e42e7371eb20
+# ╠═0c077978-fa41-4c8d-ac50-4d56dd34727e
+# ╠═6e1e75e4-4dca-437b-b800-b405905187be
+# ╠═0267d392-386a-43bc-a276-280ef313d3d5
+# ╠═c7f1d968-792b-42dc-959e-7da1c5067e27
+# ╠═c460704c-2170-4880-b268-3489855fe131
+# ╠═93cae015-a919-48c3-9980-dd093e44f642
 # ╟─62361e9e-5aa0-4b7f-9617-6f0ac313807b
-# ╟─0638aa65-0e56-4f6d-b763-3011d971e1e4
+# ╠═0638aa65-0e56-4f6d-b763-3011d971e1e4
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
