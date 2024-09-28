@@ -4,31 +4,411 @@
 using Markdown
 using InteractiveUtils
 
-# ╔═╡ f2c8d960-748b-11ef-2f32-13b8567783fe
-begin
-	using PlutoUI
-	PlutoUI.TableOfContents(title="Caso de estudio: Ecuación de Richards en una dimensión", aside=true)
+# This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
+macro bind(def, element)
+    quote
+        local iv = try Base.loaded_modules[Base.PkgId(Base.UUID("6e696c72-6542-2067-7265-42206c756150"), "AbstractPlutoDingetjes")].Bonds.initial_value catch; b -> missing; end
+        local el = $(esc(element))
+        global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : iv(el)
+        el
+    end
 end
 
-# ╔═╡ f77babde-9ce1-41b8-a7fb-f469451e495d
+# ╔═╡ 8a376232-7cf2-11ef-35c9-9570203b44d6
+begin
+	using PlutoUI
+	PlutoUI.TableOfContents(title="Caso de estudio: Ecuación de Richards en dos dimensiones", aside=true)
+end
+
+# ╔═╡ d777876d-8117-4c6e-873c-e80205462296
 begin
 	using Plots
 	using LinearAlgebra
+	using LaTeXStrings
 end
 
-# ╔═╡ c79ab846-7fb2-408d-933b-27a693f6eed0
+# ╔═╡ 6b9bff3d-8e8c-4d0d-b27c-773c64241297
+md"""
+- **Proyecto**. Análisis numérico de la Ecuación de Richards.
+- **Autor**. Carlos Nosa.
+"""
+
+# ╔═╡ 42f564a9-204c-4a46-9b76-c8fe48b4051c
 md"""
 # Introducción
+"""
+
+# ╔═╡ 697cf3fc-a159-448d-b3be-41249524c3ca
+md"""
+En este cuaderno se resuelve la ecuación de Richards en dos dimensiones espaciales:
+
+$(S)\left\{\begin{array}{c}
+\textup{Encontrar } h((x,z),t):\Omega\times[0,T]\to \mathbb{R} \textup{ tal que:}\\
+\frac{\partial\theta(h)}{\partial t} = \frac{\partial}{\partial z}\left(K(h)\nabla\left(h +z\right)\right)\\
+h(\cdot,\cdot,t)|_{\partial \Omega} = 1,\ \textup{con }t\in[0,T]\\
+h(x,z,0) = g(x,z),\ \textup{en }\Omega
+\end{array}\right.$
+
+donde 
+-  $\Omega=[0,1]\times[0,1]$
+-  $T=1$
+-  $K_S=0.12$
+-  $\theta_s=0.42$
+-  $\theta_r=0.026$
+-  $\alpha=(2,2)$
+
+y las funciones $K(h)$ y $\theta(h)$ se pueden modelar por:
+
+$K(h)=K(\theta(h))=\left\{\begin{array}{cc}
+0, & \theta(h)\leq\theta_{r}\\
+K_S \frac{(\theta(h) - \theta_r)^4}{(\theta_s-\theta_r)^4}, & \theta_r\leq\theta(h)\leq\theta_{s}\\
+K_S, & \theta(h)\geq\theta_{s}\\
+\end{array}\right.$
+
+
+$\theta(h)=\left\{\begin{array}{cc}
+					(\theta_s-\theta_r)\frac{1}{1+exp(-\alpha\cdot h -2\alpha\theta_s)} + \theta_r, & h\leq 0\\
+					\theta_s, & h\geq 0\\
+					\end{array}\right.$
+
+La condición inicial es $g(x,z) = 1 - xz(x-1)(z-1)$.
+"""
+
+# ╔═╡ 6e253c24-04d4-428d-a4e9-6b005a7a3a43
+md"""
+Las gráficas de las funciones $K$ y $\theta$ con sus derivadas se muestran a continuación.
+"""
+
+# ╔═╡ dfcf0032-eafd-4caf-88b7-ab42bdea1a23
+begin
+	Kₛ = 0.20
+	θₛ = 0.40
+	θᵣ = 0.01
+	α = 2
+	
+	function θ(h)
+		return (θₛ-θᵣ) * (1 + exp(-α*(h+5*θₛ)))^(-1) + θᵣ
+	end
+	
+	function K(h)
+		if θ(h) <= θᵣ
+			return 0
+		elseif θᵣ <= θ(h) <= θₛ
+			return Kₛ * ((θ(h)-θᵣ)^4 / (θₛ-θᵣ)^4) 
+		else 
+			return Kₛ
+		end
+	end
+	function θp(h)
+		return (θₛ-θᵣ) *  (- α*h * exp(-α*(h+5*θₛ))) * (1 + exp(-α*(h+5*θₛ)))^(-2) + θᵣ
+	end
+	
+	function Kp(h)
+		if θ(h) <= θᵣ
+			return 0
+		elseif θᵣ <= θ(h) <= θₛ
+			return 4* Kₛ * ((θ(h)-θᵣ)^3 / (θₛ-θᵣ)^4) * θp(h)
+		else 
+			return 0
+		end
+	end
+end
+
+# ╔═╡ 13b5b056-9c76-4bbe-92fc-0806a766e9f5
+plot(plot(-10:0.1:10, θ.(-10:0.1:10),label="",xlabel=L"h",ylabel=L"\theta", title=L"\theta(h)"),plot(-10:0.1:10, K.(-10:0.1:10),label="",xlabel=L"h",ylabel=L"K", title=L"K(h)"), plot(-10:0.1:10, θp.(-10:0.1:10),label="",xlabel=L"h",ylabel=L"\theta'", title=L"\theta'(h)"),plot(-10:0.1:10, Kp.(-10:0.1:10),label="",xlabel=L"h",ylabel=L"K'", title=L"K'(h)"), layout=(2,2),size=(700,600))
+
+# ╔═╡ b4aa6e8c-e51b-457e-8c68-7d7d7fec3fff
+function g(x,z)
+	return 1 - x*z*(x-1)*(z-1)
+end
+
+# ╔═╡ 2ce13763-8808-4c8f-b9c3-46564323a824
+begin
+	x_vals = range(0, 1, length=100)
+	z_vals = range(0, 1, length=100)
+	
+	# Crear una matriz para almacenar los valores de la función
+	g_vals = [g(x, z) for x in x_vals, z in z_vals]
+	
+	# Graficar usando plot_surface
+	plot(x_vals, z_vals, g_vals, st=:surface, xlabel="x", ylabel="z", zlabel="g(x,z)",color=:viridis, title="Superficie de g(x, z)")
+	#savefig("CondIni2.png")
+end
+
+# ╔═╡ b2f7ed84-d65c-49a2-9f35-bcdf872ee652
+md"""
+Por otra parte, la formulación variacional de este problema es: 
+
+$(W)\left\{\begin{array}{c}
+\textup{Encontrar } h(x,z,t):\Omega\times[0,T]\to \mathbb{R} \textup{ tal que para toda } v\textup{ con }v|_{\partial\Omega}=0\\
+\int_{\Omega}\frac{\partial\theta(h(x,z,t))}{\partial t}v =-\int_{\Omega}K(h)\nabla\left(h +z\right)\nabla v\\
+h(\cdot,\cdot,t)|_{\partial \Omega} = 1,\ \textup{con }t\in[0,T]\\
+h(x,z,0) = g(x,z),\ \textup{en }\Omega
+\end{array}\right.$
+
+Esta formulación nos servirá como punto de partida para la discretización en tiempo y en espacio y se asumirá que una solución de $(W)$ es una solución de $(S)$.
+"""
+
+# ╔═╡ c4b4b0dc-4ad0-4165-ab8c-310c55bbfed3
+md"""
+# Método de Newton
+"""
+
+# ╔═╡ c2bc1083-644b-4893-b4ee-817252b3e61f
+md"""
+Para quitarnos la dependencia no lineal de la derivada temporal de $\theta(h)$ vamos a aproximar esta función por medio de su aproximación lineal: Considere $M$ un número entero positivo y $t_{i} = \frac{i}{M}$ para $i=0,1,\ldots,M$ como los puntos que particionan el dominio temporal, así, aproximamos,
+
+$\frac{\partial}{\partial t}\theta(h(x,z,t_{i})) \approx \frac{\theta(h(x,z,t_{i}))-\theta(h(x,z,t_{i-1}))}{\frac{1}{M}}$
+
+para $i=1,\ldots,M$. Usando el método de Euler implícito la discretización temporal se ve de la siguiente manera: Dado $t_0=0$ y $h(x,z,t_0)=g(x,z)$ para todo $(x,z)\in\Omega$ se construye la función $h(x,z,t_{i})$ a partir de la función conocida $h(x,z,t_{i-1})$ de tal manera que cumpla lo siguiente:
+
+$\begin{align}
+&\int_{\Omega}\theta(h(x,z,t_{i}))v  \\
+&= \int_{\Omega}\theta(h(x,z,t_{i-1}))v-\frac{1}{M}\int_{\Omega}K(h(x,z,t_{i}))\nabla\left(h +z\right)\nabla v
+\end{align}$
+$h(x,z,t_{i})|_{\partial \Omega} = 1.$
+
+Nótese que la ecuación anterior no es lineal en la función desconocida $h(x,z,t_{i})$ por ende, para cada avance en la discretización temporal se debe resolver una ecuación no lineal en la discretización espacial, por tanto, se va a usar el *método de Newton*.
+"""
+
+# ╔═╡ c86457e8-0d89-48b7-9485-c531011a9967
+md"""
+Para cada $i=1,\ldots,m$, defina el operador $F_{i}$ como
+
+$F_{i}(g)=\int_{\Omega}\theta(g(x,z))v - \int_{\Omega}\theta(h(x,z,t_{i-1}))v+\frac{1}{M}\int_{\Omega}K(g(x,z))\nabla\left(g +z\right)\nabla v,$
+
+de esta manera es posible definir $h(x,z,t_{i})$ como la función que satisface $F_{i}(h(\cdot,\cdot,t_{i})) = 0$; al operador $F_{i}$ es al que le vamos a aplicar el método de Newton.
+
+Defina $\gamma(x,z) = h(x,z,t_{i})-h(x,z,t_{i-1})$, por ende
+-  $\theta(h(x,z,t_{i})) \approx \theta(h(x,z,t_{i-1})) + \theta'(h(x,z,t_{i-1})) \gamma(x,z)$,
+-  $K(h(x,z,t_{i})) \approx K(h(x,z,t_{i-1})) + K'(h(x,z,t_{i-1})) \gamma(x,z)$,
+-  $\nabla h(x,z,t_{i}) =  \nabla h(x,z,t_{i-1}) + \nabla \gamma(x,z)$
+
+así,
+
+$\begin{align}
+0 &= F_{i}(h(x,z,t_{i}))\\
+&=\int_{\Omega}\theta(h(x,z,t_{i}))v - \int_{\Omega}\theta(h(x,z,t_{i-1}))v\\&+\frac{1}{M}\int_{\Omega}K(h(x,z,t_{i}))\nabla\left(h+z\right)\nabla v\\
+&\approx \int_{\Omega}\theta'(h(x,z,t_{i-1}))\gamma \cdot v\\
+&+\frac{1}{M}\int_{\Omega}(K(h(x,z,t_{i-1}))+K'(h(x,z,t_{i-1}))\gamma)\nabla\left(h(x,z,t_{i-1}) + \gamma +z\right)\nabla v\\
+&\approx \int_{\Omega}\theta'(h(x,z,t_{i-1}))\gamma\cdot v\\
+&+\frac{1}{M}\int_{\Omega}K(h(x,z,t_{i-1}))\nabla\left(h(x,z,t_{i-1}) +z\right)\nabla v\\
+&+ \frac{1}{M}\int_{\Omega}K(h(x,z,t_{i-1}))\nabla\gamma\cdot\nabla v\\
+&+ \frac{1}{M}\int_{\Omega}K'(h(x,z,t_{i-1}))\nabla\left(h(x,z,t_{i-1}) +z\right)\gamma \cdot\nabla v,\\
+\end{align}$
+asumiendo que $\gamma\nabla\gamma \approx 0$ por representar una perturbación.
+"""
+
+# ╔═╡ e23578d3-9ee9-49d6-a0af-20aa529f95b9
+md"""
+Por tanto, 
+
+$\begin{align}
+&-\frac{1}{M}\int_{\Omega}K(h(x,z,t_{i-1}))\nabla\left(h(x,z,t_{i-1}) +z\right)\nabla v\\& \approx \int_{\Omega}\theta'(h(x,z,t_{i-1}))\gamma_{(j-1)} \cdot v\\
+&+\frac{1}{M}\int_{\Omega}K(h(x,z,t_{i-1}))\nabla\gamma_{(j-1)}\cdot\nabla v \\
+&+  \frac{1}{M}\int_{\Omega}K'(h(x,z,t_{i-1}))\nabla\left(h(x,z,t_{i-1}) +z\right)\gamma_{(j-1)} \cdot\nabla v,
+\end{align}$
+
+nótese que la anterior ecuación es lineal en $\gamma$ por ende podemos aplicar el método de los elementos finitos. Teniendo en cuenta lo anterior podemos resumir el método de Newton: Dado $i=1,\ldots,m$ fijo, la $j$-ésima iteración del método de Newton es
+
+$h(x,z,t_{i})_{(0)} = h(x,z,t_{i-1})$
+$h(x,z,t_{i})_{(j)} = h(x,z,t_{i})_{(j-1)}+\gamma_{(j-1)}(x,z)$
+
+donde $\gamma_{(j-1)}(z)$ satisface
+
+$\begin{align}
+&-\frac{1}{M}\int_{\Omega}K(h(x,z,t_{i-1}))\nabla\left(h(x,z,t_{i-1}) +z\right)\nabla v\\& = \int_{\Omega}\theta'(h(x,z,t_{i-1}))\gamma_{(j-1)} \cdot v\\
+&+\frac{1}{M}\int_{\Omega}K(h(x,z,t_{i-1}))\nabla\gamma_{(j-1)}\cdot\nabla v \\
+&+  \frac{1}{M}\int_{\Omega}K'(h(x,z,t_{i-1}))\nabla\left(h(x,z,t_{i-1}) +z\right)\gamma_{(j-1)} \cdot\nabla v,
+\end{align}$
+
+y $\gamma_{(j-1)}|_{\partial\Omega}=0$.
+"""
+
+# ╔═╡ a7d76c48-d166-45e3-bd04-c16b5764243e
+md"""
+Para aplicar el método de los elementos finitos, suponemos que 
+
+$\gamma_{(j-1)}(z) = \sum_{w = 0}^{N}\alpha_{w}\phi_{w}(z)$
+
+donde hemos discretizado el dominio temporal en $N$ elementos. Para $u,w\in\{0,1,\ldots,N-1,N\}$ definimos
+-  $d_{u} = -\frac{1}{M}\int_{\Omega}K(h(z,t_{i})_{(j-1)})\nabla\left(h(x,z,t_{i-1}) +z\right)\nabla \phi_{u}$,
+-  $a_{uw}=\int_{\Omega}\theta'(h(x,z,t_{i})_{(j-1)})\phi_{w}\phi_{u}$,
+-  $b_{uw}=\frac{1}{M}\int_{\Omega}K(h(x,z,t_{i})_{(j-1)})\nabla\phi_{w}\nabla\phi_{u}$,
+-  $c_{uw}=\frac{1}{M}\int_{\Omega}K'(h(x,z,t_{i})_{(j-1)})\nabla\left(h(x,z,t_{i})_{(j-1)} +z\right)\phi_{w}\nabla\phi_{u}$,
+
+"""
+
+# ╔═╡ c80d34db-0352-4624-a716-ef4826027c06
+md"""
+Declaramos sliders para $N$ (discretización espacial) y $M$ (discretización temporal).
+"""
+
+# ╔═╡ 87d4e2da-538b-43af-8588-e660a8505de4
+NSlider = @bind N Slider(3:100, show_value=true, default=10)
+
+# ╔═╡ 9694a341-245c-449a-9f7f-8961f71d3948
+MSlider = @bind M Slider(3:100, show_value=true, default=10)
+
+# ╔═╡ 8b1d6ad6-1a6f-4f24-8008-5512a650b082
+md"""
+Programamos el método de Euler implícito con Newton para el problema $(W)$ discretizado.
+"""
+
+# ╔═╡ a522fcd3-e859-4fe6-ba54-14ba9c180ee3
+function Richards_Newton(M,N;maxiter=10,tol=1E-8)
+	Solucion = [zeros(N+1,N+1) for l in 1:M+1]
+	for l1 in 1:N+1
+		for l2 in 1:N+1
+			Solucion[1][l1,l2] = g((l1-1)/N,(l2-1)/N)
+		end
+	end
+	
+	function ϕ10(x,z)
+		return (-1/4)*(1-x)*(-1-z)
+	end
+	function ϕ20(x,z)
+		return (1/4)*(-1-x)*(-1-z)
+	end
+	function ϕ30(x,z)
+		return (1/4)*(1-x)*(1-z)
+	end
+	function ϕ40(x,z)
+		return (-1/4)*(-1-x)*(1-z)
+	end
+	function ∂ϕ10(x,z)
+		return [(1/4)*(-1-z),(1/4)*(1-x)]
+	end
+	function ∂ϕ20(x,z)
+		return [(-1/4)*(-1-z),(-1/4)*(-1-x)]
+	end
+	function ∂ϕ30(x,z)
+		return [(-1/4)*(1-z),(-1/4)*(1-x)]
+	end
+	function ∂ϕ40(x,z)
+		return [(1/4)*(1-z),(1/4)*(-1-x)]
+	end 
+
+	ω₀ = [5/9;8/9;5/9]
+	ξ₀ = [(-sqrt(3/5),-sqrt(3/5)) (-sqrt(3/5),0) (-sqrt(3/5), sqrt(3/5)) ; 
+		(0,-sqrt(3/5)) (0,0) (0,sqrt(3/5));
+		(sqrt(3/5),-sqrt(3/5)) (sqrt(3/5),0) (sqrt(3/5),sqrt(3/5))]
+	
+	ϕ1 = map(p->ϕ10(p[1],p[2]),ξ₀)
+	ϕ2 = map(p->ϕ20(p[1],p[2]),ξ₀)
+	ϕ3 = map(p->ϕ30(p[1],p[2]),ξ₀)
+	ϕ4 = map(p->ϕ40(p[1],p[2]),ξ₀)
+	∂ϕ1 = map(p->∂ϕ10(p[1],p[2]),ξ₀)
+	∂ϕ2 = map(p->∂ϕ20(p[1],p[2]),ξ₀)
+	∂ϕ3 = map(p->∂ϕ30(p[1],p[2]),ξ₀)
+	∂ϕ4 = map(p->∂ϕ40(p[1],p[2]),ξ₀)
+	ϕ = [ϕ1,ϕ2,ϕ3,ϕ4]
+	∂ϕ = [∂ϕ1,∂ϕ2,∂ϕ3,∂ϕ4]
+	
+	
+	function Tinvξ(a,c)
+		ξ₀₀ = map(p -> ((0.5/N)*(p[1]+1)+a,(0.5/N)*(p[2]+1)+c), ξ₀)
+		return ξ₀₀
+	end
+	dofsglobal = 1:(N+1)^2
+	dofsD = union(1:N+1,N+1:N+1:(N+1)^2,1:N+1:N^2+N+1,N^2+N+1:(N+1)^2)
+	dofsfree = [t for t in dofsglobal if !(t in dofsD)]
+	dofs1 = [k for k in 1:(N+1)^3 if k%(N+1)!=0]
+	for i in 1:M
+		ti = i/M
+		htianterior = copy(Solucion[i])
+		htij = copy(reshape(htianterior,(N+1)^2,1))
+		for j in 1:maxiter
+			A = zeros((N+1)^2,(N+1)^2)
+			B = zeros((N+1)^2,(N+1)^2)
+			C = zeros((N+1)^2,(N+1)^2)
+			d = zeros((N+1)^2,1)
+			
+			for k in 1:N*N
+				dof1 = dofs1[k]
+				P1 = [0,0] + (1/N)*[dof1%(N+1)-1, - floor(dof1/(N+1))]
+				dof = [dof1,dof1+1,dof1+N+1,dof1+N+2]
+				ξ = Tinvξ(P1[1],P1[2]-1/N)
+				
+				h_j = htij[dof]' * ϕ
+				∂h_j = htij[dof]'* ∂ϕ .+ [[0.0,1.0]] 
+
+				
+		
+				ka = θ.(h_j)
+				Alocal = [ ω₀' * (ka .*ϕ[i].*ϕ[j]) * ω₀ for i in 1:4, j in 1:4]
+				kb = (1/M) * K.(h_j)
+				Blocal = [ ω₀' * (kb .*dot.(∂ϕ[i],∂ϕ[j])) * ω₀ for i in 1:4, j in 1:4]
+				kc = (1/M) * Kp.(h_j)
+				Clocal = [ ω₀' * (ϕ[i] .* kc .*dot.(∂h_j,∂ϕ[j])) * ω₀ for i in 1:4, j in 1:4]
+				kd = -(1/M) * K.(h_j)
+				dlocal = [ ω₀' * (kc .*dot.(∂h_j,∂ϕ[i])) * ω₀ for i in 1:4]
+				
+				#Ensamblaje de las matrices globales 
+				A[dof,dof]  += Alocal 
+				B[dof,dof]  += Blocal 
+				C[dof,dof]  += Clocal 
+				d[dof]      += dlocal
+			end
+		
+			s = (A[dofsfree,dofsfree]+B[dofsfree,dofsfree]+C[dofsfree,dofsfree])\d[dofsfree]
+
+			if norm(s)<=tol
+				break
+			end
+			htij[dofsfree] = htij[dofsfree] + s 
+		end
+		Solucion[i+1] = copy(reshape(htij,N+1,N+1))
+	end
+	return Solucion
+end
+
+# ╔═╡ 85245c35-86b8-4d3d-92ae-55abe0722644
+md"""
+La solución consiste en una sucesión de matrices en donde la matriz $i$ representa la solución discretizada de la función para el tiempo $t_{i-1}$.
+"""
+
+# ╔═╡ d9866c25-ccd4-4781-abb1-88d22fbc9c97
+Solucion_Newton = Richards_Newton(M,N)
+
+# ╔═╡ 3a6d2a5f-b14b-421b-a035-3bded54111dc
+begin
+	plot(0:1/N:1, 0:1/N:1, Solucion_Newton[M+1], st=:surface,xlabel="x", ylabel="z", zlabel="h",color=:viridis, title="Método de Newton. Tiempo 1")
+	#savefig("Richards2d_MN.png")
+end
+
+# ╔═╡ 4f085f05-791b-4beb-85b0-1d7d7163d3a9
+begin
+	anim1 = @animate for obs = 1:M+1
+			plot(0:1/N:1, 0:1/N:1, Solucion_Newton[obs], st=:surface,  xlabel="x", ylabel="z", zlabel="",color=:viridis, title="Método de Newton. Tiempo $obs de $M")
+		end
+		gif(anim1,"Richards_Newton_2D.gif",fps=5)
+end
+
+# ╔═╡ 7adda430-2a7a-403f-b31a-0d1ee3d62c80
+md"""
+# Referencias
+"""
+
+# ╔═╡ ac1c1301-e3c7-4516-8a87-b3acc2c523b2
+md"""
+[1] Knabner, P. and Angermann L., Numerical methods for elliptic and parabolic partial differential equations, Springer Verlag, 2003.
+
+[2] List, F., \& Radu, F. A. (2015, julio 28). A study on iterative methods for solving Richards` equation. arXiv.Org. https://doi.org/10.1007/s10596-016-9566-3
+
+[3] W. Cheney and D. Kincaid. Numerical Analysis: Mathematics of Scientific Computing. American Mathematical Society, 2002.
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
+LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 
 [compat]
+LaTeXStrings = "~1.3.1"
 Plots = "~1.40.8"
 PlutoUI = "~0.7.60"
 """
@@ -39,7 +419,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.9.2"
 manifest_format = "2.0"
-project_hash = "6e9b10408ad430728e6187bdd1c3f8c71698b429"
+project_hash = "20ddf75a4c522e62a8d4f8a1b13f8d5002990708"
 
 [[deps.AbstractPlutoDingetjes]]
 deps = ["Pkg"]
@@ -354,9 +734,9 @@ version = "3.0.0+1"
 
 [[deps.LLVMOpenMP_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "e16271d212accd09d52ee0ae98956b8a05c4b626"
+git-tree-sha1 = "78211fb6cbc872f77cad3fc0b6cf647d923f4929"
 uuid = "1d63c593-3942-5779-bab2-d838dc0a180e"
-version = "17.0.6+0"
+version = "18.1.7+0"
 
 [[deps.LZO_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -562,9 +942,9 @@ version = "1.4.3"
 
 [[deps.OpenSSL_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "a028ee3cb5641cccc4c24e90c36b0a4f7707bdf5"
+git-tree-sha1 = "1b35263570443fdd9e76c76b7062116e2f374ab8"
 uuid = "458c3c95-2e84-50aa-8efc-19380b2a3a95"
-version = "3.0.14+0"
+version = "3.0.15+0"
 
 [[deps.Opus_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -1155,8 +1535,32 @@ version = "1.4.1+1"
 """
 
 # ╔═╡ Cell order:
-# ╠═f2c8d960-748b-11ef-2f32-13b8567783fe
-# ╠═f77babde-9ce1-41b8-a7fb-f469451e495d
-# ╠═c79ab846-7fb2-408d-933b-27a693f6eed0
+# ╟─8a376232-7cf2-11ef-35c9-9570203b44d6
+# ╠═d777876d-8117-4c6e-873c-e80205462296
+# ╟─6b9bff3d-8e8c-4d0d-b27c-773c64241297
+# ╟─42f564a9-204c-4a46-9b76-c8fe48b4051c
+# ╟─697cf3fc-a159-448d-b3be-41249524c3ca
+# ╟─6e253c24-04d4-428d-a4e9-6b005a7a3a43
+# ╠═dfcf0032-eafd-4caf-88b7-ab42bdea1a23
+# ╟─13b5b056-9c76-4bbe-92fc-0806a766e9f5
+# ╠═b4aa6e8c-e51b-457e-8c68-7d7d7fec3fff
+# ╟─2ce13763-8808-4c8f-b9c3-46564323a824
+# ╟─b2f7ed84-d65c-49a2-9f35-bcdf872ee652
+# ╟─c4b4b0dc-4ad0-4165-ab8c-310c55bbfed3
+# ╟─c2bc1083-644b-4893-b4ee-817252b3e61f
+# ╟─c86457e8-0d89-48b7-9485-c531011a9967
+# ╟─e23578d3-9ee9-49d6-a0af-20aa529f95b9
+# ╟─a7d76c48-d166-45e3-bd04-c16b5764243e
+# ╟─c80d34db-0352-4624-a716-ef4826027c06
+# ╠═87d4e2da-538b-43af-8588-e660a8505de4
+# ╠═9694a341-245c-449a-9f7f-8961f71d3948
+# ╟─8b1d6ad6-1a6f-4f24-8008-5512a650b082
+# ╠═a522fcd3-e859-4fe6-ba54-14ba9c180ee3
+# ╟─85245c35-86b8-4d3d-92ae-55abe0722644
+# ╠═d9866c25-ccd4-4781-abb1-88d22fbc9c97
+# ╟─3a6d2a5f-b14b-421b-a035-3bded54111dc
+# ╟─4f085f05-791b-4beb-85b0-1d7d7163d3a9
+# ╟─7adda430-2a7a-403f-b31a-0d1ee3d62c80
+# ╟─ac1c1301-e3c7-4516-8a87-b3acc2c523b2
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
